@@ -93,6 +93,8 @@ class ScheduleAnticipationActionUseCase:
             anticipation_data.get("anticipated_start_time") is not None,
         )
 
+        await self._complete_elapsed_preheating()
+
         # Decision 1: No valid data - cancel everything
         if anticipation_data.get("anticipated_start_time") is None:
             _LOGGER.debug("No valid anticipation data - cancelling any active scheduling")
@@ -347,6 +349,21 @@ class ScheduleAnticipationActionUseCase:
             self._anticipation_timer_cancel = None
             # Note: Timer cancelled but target_time preserved (as per review feedback)
         _LOGGER.debug("Exiting cancel_timer")
+
+    async def _complete_elapsed_preheating(self) -> None:
+        """Mark active preheating complete once its target slot has fired.
+
+        The next recalculation targets the following slot, so the active flag must
+        be cleared here, otherwise it would block scheduling of that next slot.
+        """
+        if not self._control_preheating.is_preheating_active():
+            return
+        preheating_target = self._control_preheating.get_preheating_target_time()
+        if preheating_target is None or dt_util.now() < preheating_target:
+            return
+        _LOGGER.info("Preheating target time %s reached, preheating complete", preheating_target)
+        self._control_preheating.mark_preheating_complete()
+        await self._clear_state()
 
     async def _clear_state(self) -> None:
         """Clear all tracking state."""
