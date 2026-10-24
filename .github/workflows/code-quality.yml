@@ -78,8 +78,8 @@ jobs:
         continue-on-error: true
 
       - name: Comment results on PR
-        # Dependabot runs get a read-only token and cannot comment
-        if: github.event.pull_request.user.login != 'dependabot[bot]'
+        # Dependabot runs and fork PRs get a read-only token and cannot comment
+        if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
