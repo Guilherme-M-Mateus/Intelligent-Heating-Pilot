@@ -4,7 +4,7 @@ This adapter implements IHeatingCycleStorage by using Home Assistant's storage h
 to persist heating cycles with incremental update support.
 """
 
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -63,7 +63,7 @@ def device_id() -> str:
 @pytest.fixture
 def base_time() -> datetime:
     """Create a base time for tests."""
-    return datetime(2025, 12, 18, 14, 0, 0, tzinfo=timezone.utc)
+    return datetime(2025, 12, 18, 14, 0, 0, tzinfo=UTC)
 
 
 @pytest.fixture

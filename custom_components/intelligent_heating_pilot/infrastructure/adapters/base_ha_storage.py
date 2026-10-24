@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Generic, TypeVar
 
 from homeassistant.helpers.storage import Store
@@ -134,7 +134,7 @@ class BaseHAStorageAdapter(ABC, Generic[TData]):
 
         # Ensure timezone-aware: add UTC if naive
         if dt.tzinfo is None:
-            dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.replace(tzinfo=UTC)
 
         return dt
 

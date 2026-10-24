@@ -148,7 +148,10 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
         """
         vtherm_state = self._hass.states.get(self._vtherm_entity_id)
         if not vtherm_state:
-            _LOGGER.debug("VTherm entity not found when reading target temperature: %s", self._vtherm_entity_id)
+            _LOGGER.debug(
+                "VTherm entity not found when reading target temperature: %s",
+                self._vtherm_entity_id,
+            )
             return None
 
         for key in ("temperature", "target_temperature", "target_temp"):
@@ -245,7 +248,7 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
             # Shutdown in progress - abort gracefully
             _LOGGER.debug("History fetch cancelled (shutdown in progress) for %s", entity_id)
             raise ValueError(f"Cannot fetch history for entity {entity_id}") from None
-        except asyncio.TimeoutError:
+        except TimeoutError:
             # Timeout waiting for database - likely DB is shutdown
             _LOGGER.error("Timeout fetching history for %s (DB may be shutdown)", entity_id)
             raise ValueError(f"Cannot fetch history for entity {entity_id}") from None
@@ -350,7 +353,7 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
         except asyncio.CancelledError:
             _LOGGER.debug("History fetch cancelled (shutdown in progress) for %s", entity_id)
             raise ValueError(f"Cannot fetch history for entity {entity_id}") from None
-        except asyncio.TimeoutError:
+        except TimeoutError:
             _LOGGER.error("Timeout fetching history for %s (DB may be shutdown)", entity_id)
             raise ValueError(f"Cannot fetch history for entity {entity_id}") from None
         except Exception as exc:

@@ -551,7 +551,7 @@ async def test_shutdown_cancels_running_extraction():
     # Wait for task to finish
     try:
         await asyncio.wait_for(run_task, timeout=2.0)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         run_task.cancel()
 
     # VERIFY #1: Queue must stop running

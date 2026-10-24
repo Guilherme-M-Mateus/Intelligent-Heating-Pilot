@@ -5,7 +5,7 @@ Implements BDD steps for testing FIFO memory cache eviction strategy.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -103,7 +103,7 @@ def oldest_cycle_from_date(eviction_context, device_id, date):
     cache_key = (device_id, oldest_date)
     if cache_key not in manager._cached_cycles_for_target_time:
         cycle = create_test_heating_cycle(
-            device_id, datetime.combine(oldest_date, datetime.min.time(), tzinfo=timezone.utc)
+            device_id, datetime.combine(oldest_date, datetime.min.time(), tzinfo=UTC)
         )
         manager._cached_cycles_for_target_time[cache_key] = [cycle]
 
@@ -119,7 +119,7 @@ def newest_cycle_from_date(eviction_context, device_id, date):
     cache_key = (device_id, newest_date)
     if cache_key not in manager._cached_cycles_for_target_time:
         cycle = create_test_heating_cycle(
-            device_id, datetime.combine(newest_date, datetime.min.time(), tzinfo=timezone.utc)
+            device_id, datetime.combine(newest_date, datetime.min.time(), tzinfo=UTC)
         )
         manager._cached_cycles_for_target_time[cache_key] = [cycle]
 
@@ -139,7 +139,7 @@ def cycle_evicted_from_date(eviction_context, device_id, date):
 
     # Setup storage mock to return this cycle when requested
     evicted_cycle = create_test_heating_cycle(
-        device_id, datetime.combine(evicted_date, datetime.min.time(), tzinfo=timezone.utc)
+        device_id, datetime.combine(evicted_date, datetime.min.time(), tzinfo=UTC)
     )
     manager._heating_cycle_storage.get_cache_data = AsyncMock(return_value=[evicted_cycle])
 
@@ -185,7 +185,7 @@ def new_cycle_from_date_added(eviction_context, device_id, date):
 
     # Add the new cycle
     new_cycle = create_test_heating_cycle(
-        device_id, datetime.combine(new_date, datetime.min.time(), tzinfo=timezone.utc)
+        device_id, datetime.combine(new_date, datetime.min.time(), tzinfo=UTC)
     )
     cache_key = (device_id, new_date)
     manager._cached_cycles_for_target_time[cache_key] = [new_cycle]

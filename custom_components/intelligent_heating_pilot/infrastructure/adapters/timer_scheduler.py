@@ -7,8 +7,9 @@ async_track_point_in_time API.
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable, Coroutine
 from datetime import datetime
-from typing import Any, Callable, Coroutine, cast
+from typing import Any, cast
 
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_track_point_in_time

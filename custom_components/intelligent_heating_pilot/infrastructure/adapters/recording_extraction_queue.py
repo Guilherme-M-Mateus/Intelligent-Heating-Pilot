@@ -13,7 +13,7 @@ import inspect
 import logging
 from collections import deque
 from collections.abc import Awaitable, Callable
-from datetime import date, datetime, time, timedelta, timezone
+from datetime import UTC, date, datetime, time, timedelta
 from typing import TYPE_CHECKING
 
 try:
@@ -349,7 +349,7 @@ class RecordingExtractionQueue:
         try:
             # Create time window for this period using HA local timezone to avoid
             # midnight boundary shifts on non-UTC installations.
-            local_tz = dt_util.get_default_time_zone() if dt_util is not None else timezone.utc
+            local_tz = dt_util.get_default_time_zone() if dt_util is not None else UTC
             start_time = datetime.combine(start_date, time.min).replace(tzinfo=local_tz)
             end_time = datetime.combine(end_date, time.max).replace(tzinfo=local_tz)
 

@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import suppress
-from datetime import date, datetime, timedelta, timezone
+from datetime import UTC, date, datetime, timedelta
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -38,7 +38,7 @@ class TestHeatingCycleLifecycleManager:
     @pytest.fixture
     def base_datetime(self) -> datetime:
         """Provide base datetime for testing."""
-        return datetime(2025, 2, 10, 12, 0, 0, tzinfo=timezone.utc)
+        return datetime(2025, 2, 10, 12, 0, 0, tzinfo=UTC)
 
     @pytest.fixture
     def device_config(self) -> DeviceConfig:
@@ -221,7 +221,7 @@ class TestHeatingCycleLifecycleManager:
         assert manager._extraction_task is not None
         try:
             await asyncio.wait_for(manager._extraction_task, timeout=10.0)
-        except asyncio.TimeoutError:
+        except TimeoutError:
             manager._extraction_task.cancel()
             with suppress(asyncio.CancelledError):
                 await manager._extraction_task

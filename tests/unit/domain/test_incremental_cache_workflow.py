@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -12,7 +12,7 @@ from .fixtures import TEST_DEVICE_ID, create_test_heating_cycle
 @pytest.fixture
 def base_time() -> datetime:
     """Get base time for tests."""
-    return datetime(2025, 12, 18, 14, 0, 0, tzinfo=timezone.utc)
+    return datetime(2025, 12, 18, 14, 0, 0, tzinfo=UTC)
 
 
 @pytest.fixture

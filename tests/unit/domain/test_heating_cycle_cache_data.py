@@ -5,7 +5,7 @@ This value object encapsulates heating cycle cache data for a specific device.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -34,7 +34,7 @@ from .fixtures import TEST_DEVICE_ID, create_test_heating_cycle
 @pytest.fixture
 def base_time() -> datetime:
     """Get base time for tests."""
-    return datetime(2025, 12, 18, 14, 0, 0, tzinfo=timezone.utc)
+    return datetime(2025, 12, 18, 14, 0, 0, tzinfo=UTC)
 
 
 @pytest.fixture
@@ -129,9 +129,7 @@ def test_zero_retention_days_raises_error(base_time: datetime, device_id: str) -
 
 def test_naive_timestamp_raises_error(device_id: str) -> None:
     """Test that timezone-naive timestamp raises ValueError."""
-    cycles = [
-        create_test_heating_cycle(device_id, datetime(2025, 12, 18, 14, 0, 0, tzinfo=timezone.utc))
-    ]
+    cycles = [create_test_heating_cycle(device_id, datetime(2025, 12, 18, 14, 0, 0, tzinfo=UTC))]
     naive_time = datetime(2025, 12, 18, 14, 0, 0)  # No timezone
 
     with pytest.raises(ValueError, match="timezone-aware"):

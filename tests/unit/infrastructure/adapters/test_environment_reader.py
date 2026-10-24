@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import Mock, patch
 
 import pytest
@@ -93,7 +93,7 @@ async def test_get_current_environment_uses_fallbacks_when_optional_missing(
         return None
 
     mock_hass.states.get.side_effect = _get_state
-    fixed_now = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    fixed_now = datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC)
 
     with (
         patch(
@@ -142,7 +142,7 @@ async def test_get_current_environment_reads_optional_sensors(mock_hass: Mock) -
         return mapping.get(entity_id)
 
     mock_hass.states.get.side_effect = _get_state
-    fixed_now = datetime(2025, 1, 1, 12, 0, 0, tzinfo=timezone.utc)
+    fixed_now = datetime(2025, 1, 1, 12, 0, 0, tzinfo=UTC)
 
     with (
         patch(
