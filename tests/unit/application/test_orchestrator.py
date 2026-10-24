@@ -6,7 +6,7 @@ and delegates to them without changing behavior.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -101,7 +101,7 @@ class TestHeatingOrchestrator:
         mock_calculate_anticipation: Mock,
     ) -> None:
         """Test that calculate_anticipation_only delegates to use case."""
-        target_time = datetime(2025, 2, 10, 10, 0, 0, tzinfo=timezone.utc)
+        target_time = datetime(2025, 2, 10, 10, 0, 0, tzinfo=UTC)
 
         await orchestrator.calculate_anticipation_only(
             target_time=target_time,
@@ -121,8 +121,8 @@ class TestHeatingOrchestrator:
     ) -> None:
         """Test that calculate_anticipation_only returns use case result."""
         expected_data = {
-            "anticipated_start_time": datetime(2025, 2, 10, 10, 0, 0, tzinfo=timezone.utc),
-            "next_schedule_time": datetime(2025, 2, 10, 11, 0, 0, tzinfo=timezone.utc),
+            "anticipated_start_time": datetime(2025, 2, 10, 10, 0, 0, tzinfo=UTC),
+            "next_schedule_time": datetime(2025, 2, 10, 11, 0, 0, tzinfo=UTC),
             "anticipation_minutes": 60,
         }
         mock_calculate_anticipation.calculate_anticipation_datas.return_value = expected_data
@@ -145,6 +145,21 @@ class TestHeatingOrchestrator:
 
         mock_schedule_anticipation_action.cancel_action.assert_called_once()
         mock_control_preheating.cancel_preheating.assert_called_once_with("schedule.heating")
+
+    @pytest.mark.asyncio
+    async def test_cancel_pending_anticipation_cancels_timer_only(
+        self,
+        orchestrator: HeatingOrchestrator,
+        mock_control_preheating: Mock,
+        mock_schedule_anticipation_action: Mock,
+    ) -> None:
+        """Pending timer is cancelled without reverting the thermostat (used on unload)."""
+        mock_control_preheating.is_preheating_active.return_value = True
+
+        await orchestrator.cancel_pending_anticipation()
+
+        mock_schedule_anticipation_action.cancel_action.assert_awaited_once()
+        mock_control_preheating.cancel_preheating.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_disable_preheating_skips_cancel_when_not_active(

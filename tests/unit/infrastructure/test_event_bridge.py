@@ -8,7 +8,7 @@ Two layers of tests:
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -101,7 +101,7 @@ def _full_anticipation_data(
     next_schedule_time: datetime | None = None,
 ) -> dict:
     """Create a complete anticipation data dict (successful case)."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     return {
         "anticipated_start_time": anticipated_start_time or now + timedelta(minutes=30),
         "next_schedule_time": next_schedule_time or now + timedelta(hours=1),
@@ -488,8 +488,8 @@ class TestRecalculateAndPublishDeduplication:
         )
 
     def _anticipation_data(self) -> dict:
-        dt_start = datetime(2025, 1, 1, 6, 30, 0, tzinfo=timezone.utc)
-        dt_sched = datetime(2025, 1, 1, 7, 0, 0, tzinfo=timezone.utc)
+        dt_start = datetime(2025, 1, 1, 6, 30, 0, tzinfo=UTC)
+        dt_sched = datetime(2025, 1, 1, 7, 0, 0, tzinfo=UTC)
         return {
             "anticipated_start_time": dt_start,
             "next_schedule_time": dt_sched,

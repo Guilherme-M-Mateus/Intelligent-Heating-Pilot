@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "intelligent-heating-pilot"
-version = "0.6.2"
+version = "0.6.4"
 description = "Intelligent Heating Pilot for Home Assistant"
 authors = ["RastaChaum"]
 license = "MIT"
@@ -15,6 +15,8 @@ python = ">=3.13.2,<3.14"
 
 # Runtime dependencies for standalone domain experimentation (keep minimal)
 # Domain code is pure standard library; no extra runtime deps required here.
+# Pinned below 5: homeassistant pins aiodns==3.5.0, which breaks at import with pycares 5
+# (AttributeError: ares_query_a_result). Lift once HA moves to aiodns 4.
 pycares = "<5"
 
 [tool.poetry.group.dev.dependencies]
@@ -22,12 +24,12 @@ pytest = "^8.2"
 # pytest-asyncio 1.2 is required by HA test plugin
 pytest-asyncio = "^1.2.0"
 pytest-homeassistant-custom-component = "^0.13.0"
-pytest-bdd = "^7.2"  # BDD support with Gherkin
-ruff = "^0.6.0"
+pytest-bdd = ">=7.2,<9.0"  # BDD support with Gherkin
+ruff = ">=0.6,<0.18"
 mypy = "^1.10"
 types-setuptools = "^68.0.0"
 pysqlite3-binary = "^0.5.4.post2"
-pre-commit = "^3.5.0"
+pre-commit = ">=3.5,<5.0"
 bandit = {extras = ["toml"], version = "^1.7.5"}
 pbr = "^6.0"
 

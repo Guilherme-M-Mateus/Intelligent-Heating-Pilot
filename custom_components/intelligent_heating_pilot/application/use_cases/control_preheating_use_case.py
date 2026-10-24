@@ -77,6 +77,16 @@ class ControlPreheatingUseCase:
 
         _LOGGER.debug("Exiting ControlPreheatingUseCase.cancel_preheating()")
 
+    def mark_preheating_complete(self) -> None:
+        """Mark preheating as finished without commanding the scheduler.
+
+        Used once the target slot has fired: the scheduler already applied the
+        slot's setpoint, so reverting would undo it. Clearing the flag lets the
+        next slot be anticipated.
+        """
+        _LOGGER.debug("Marking preheating complete (target=%s)", self._preheating_target_time)
+        self._is_preheating_active = False
+
     async def start_preheating(
         self,
         target_time: datetime,

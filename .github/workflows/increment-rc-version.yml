@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout integration branch
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: integration
           fetch-depth: 0
@@ -68,7 +68,7 @@ jobs:
           PREV_NOTES=$(gh release view "$LAST_RC" --json body --jq '.body' 2>/dev/null || true)
 
           if [ -z "$PREV_NOTES" ]; then
-            CHANGELOG_CONTENT=$(awk '/## \[Unreleased\]/{flag=1;next} flag && /^## \[/{flag=0} flag{print}' CHANGELOG.md | sed '/./,$!d')
+            CHANGELOG_CONTENT=$(awk '/^## \[Unreleased\]$/{flag=1;next} flag && /^## \[/{flag=0} flag{print}' CHANGELOG.md | sed '/./,$!d')
 
             {
               echo "## 🧪 Release Candidate"

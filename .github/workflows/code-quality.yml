@@ -14,10 +14,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Set up Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.13'
 
@@ -29,7 +29,7 @@ jobs:
           virtualenvs-in-project: true
 
       - name: Cache dependencies
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: .venv
           key: venv-${{ runner.os }}-${{ hashFiles('**/poetry.lock') }}
@@ -78,6 +78,8 @@ jobs:
         continue-on-error: true
 
       - name: Comment results on PR
+        # Dependabot runs and fork PRs get a read-only token and cannot comment
+        if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -116,11 +118,12 @@ jobs:
               MESSAGE+="⚠️ **Coverage below recommended** - $COVERAGE% (recommended: >70%)\n\n"
             fi
           else
-            MESSAGE+="⚠️ **Could not calculate coverage**\n\n"
+            MESSAGE+="❌ **Tests failed** - Coverage: ${COVERAGE:-n/a}%\n"
+            MESSAGE+="\`\`\`\n$(grep -E '^(FAILED|ERROR)' coverage-output.txt | head -20)\n\`\`\`\n\n"
           fi
 
           MESSAGE+="---\n"
-          MESSAGE+="*These checks are informational and do not block the PR.*\n"
+          MESSAGE+="*Type checking and linting are informational; failing tests block the PR.*\n"
           MESSAGE+="*Ensure code quality improvements are made before merging to integration.*\n"
 
           echo -e "$MESSAGE" | gh pr comment ${{ github.event.pull_request.number }} --body-file -
@@ -131,3 +134,9 @@ jobs:
           echo "- MyPy: ${{ steps.mypy.outputs.exitcode == '0' && '✅ Passed' || '⚠️ Issues' }}" >> $GITHUB_STEP_SUMMARY
           echo "- Pylint: ${{ steps.pylint.outputs.score }}/10" >> $GITHUB_STEP_SUMMARY
           echo "- Coverage: ${{ steps.coverage.outputs.coverage }}%" >> $GITHUB_STEP_SUMMARY
+
+      - name: Fail on test failures
+        if: steps.coverage.outputs.exitcode != '0'
+        run: |
+          echo "❌ pytest exited with code ${{ steps.coverage.outputs.exitcode }}"
+          exit 1

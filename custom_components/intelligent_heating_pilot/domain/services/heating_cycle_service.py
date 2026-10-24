@@ -745,7 +745,7 @@ class HeatingCycleService(IHeatingCycleService):
         total_segment_energy = 0.0
         tariff_details: list[TariffPeriodDetail] = []
 
-        for a, b in zip(boundaries[:-1], boundaries[1:]):
+        for a, b in zip(boundaries[:-1], boundaries[1:], strict=True):
             # Energy consumed in segment (from cumulative meter)
             start_energy = self._get_value_at_time(energy_history, a, float) or 0.0
             end_energy = self._get_value_at_time(energy_history, b, float) or 0.0

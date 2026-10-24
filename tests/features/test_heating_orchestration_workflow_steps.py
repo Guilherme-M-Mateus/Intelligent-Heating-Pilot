@@ -13,7 +13,7 @@ Tests use REAL use cases with MOCKED adapters for true integration testing.
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -57,7 +57,7 @@ def workflow_context():
         "current_temp": None,
         "anticipated_start_time": None,
         "scheduler_entity": "switch.test_schedule",
-        "current_time": datetime(2025, 2, 10, 5, 0, 0, tzinfo=timezone.utc),
+        "current_time": datetime(2025, 2, 10, 5, 0, 0, tzinfo=UTC),
     }
 
 
@@ -130,7 +130,7 @@ def mock_prediction_service():
     # Default return value (can be overridden in GIVEN steps)
     mock.predict_heating_time = Mock(
         return_value=PredictionResult(
-            anticipated_start_time=datetime(2025, 2, 10, 5, 30, 0, tzinfo=timezone.utc),
+            anticipated_start_time=datetime(2025, 2, 10, 5, 30, 0, tzinfo=UTC),
             estimated_duration_minutes=90.0,
             learned_heating_slope=2.0,
             confidence_level=1.0,
@@ -258,7 +258,7 @@ def next_timeslot_configured(
     temp,
 ):
     """GIVEN: A scheduler timeslot exists at the given time and temperature."""
-    target_time = datetime(2025, 2, 10, hour, 0, 0, tzinfo=timezone.utc)
+    target_time = datetime(2025, 2, 10, hour, 0, 0, tzinfo=UTC)
     workflow_context["target_time"] = target_time
     workflow_context["target_temp"] = float(temp)
 
@@ -298,13 +298,11 @@ def anticipated_start_time_set(
 
     Configure prediction service to return the expected anticipated start time.
     """
-    anticipated = datetime(2025, 2, 10, hour, minute, 0, tzinfo=timezone.utc)
+    anticipated = datetime(2025, 2, 10, hour, minute, 0, tzinfo=UTC)
     workflow_context["anticipated_start_time"] = anticipated
 
     # Calculate anticipation minutes from target time
-    target_time = workflow_context.get(
-        "target_time", datetime(2025, 2, 10, 7, 0, 0, tzinfo=timezone.utc)
-    )
+    target_time = workflow_context.get("target_time", datetime(2025, 2, 10, 7, 0, 0, tzinfo=UTC))
     anticipation_minutes = (target_time - anticipated).total_seconds() / 60.0
 
     # Mock prediction service to return expected result
@@ -333,9 +331,7 @@ def anticipation_zero_minutes(workflow_context, mock_environment_reader, mock_pr
     mock_environment_reader.get_current_environment.return_value = environment
 
     # Mock prediction to return 0 anticipation minutes (target already reached)
-    target_time = workflow_context.get(
-        "target_time", datetime(2025, 2, 10, 7, 0, 0, tzinfo=timezone.utc)
-    )
+    target_time = workflow_context.get("target_time", datetime(2025, 2, 10, 7, 0, 0, tzinfo=UTC))
     mock_prediction_service.predict_heating_time = Mock(
         return_value=PredictionResult(
             anticipated_start_time=target_time,  # Start = target (0 minutes)
@@ -362,7 +358,7 @@ def preheating_active_for_target(
     hour,
 ):
     """GIVEN: Preheating is currently active for a specific target time."""
-    target_time = datetime(2025, 2, 10, hour, 0, 0, tzinfo=timezone.utc)
+    target_time = datetime(2025, 2, 10, hour, 0, 0, tzinfo=UTC)
     workflow_context["preheating_active"] = True
     workflow_context["target_time"] = target_time
 
@@ -373,7 +369,7 @@ def preheating_active_for_target(
 
     # Set schedule anticipation action state (simulate previous scheduling)
     mock_schedule_anticipation_action._last_scheduled_time = datetime(
-        2025, 2, 10, 4, 30, 0, tzinfo=timezone.utc
+        2025, 2, 10, 4, 30, 0, tzinfo=UTC
     )
     mock_schedule_anticipation_action._last_scheduled_lhs = 2.0
 
@@ -400,9 +396,9 @@ def anticipated_start_in_future(
     minute,
 ):
     """GIVEN: The new anticipated start time is after `now` (LHS improved)."""
-    anticipated = datetime(2025, 2, 10, hour, minute, 0, tzinfo=timezone.utc)
+    anticipated = datetime(2025, 2, 10, hour, minute, 0, tzinfo=UTC)
     workflow_context["anticipated_start_time"] = anticipated
-    workflow_context["current_time"] = datetime(2025, 2, 10, 6, 0, 0, tzinfo=timezone.utc)
+    workflow_context["current_time"] = datetime(2025, 2, 10, 6, 0, 0, tzinfo=UTC)
 
     # Configure environment with lower current temp (so heating is still needed but later)
     environment = EnvironmentState(
@@ -414,9 +410,7 @@ def anticipated_start_in_future(
     mock_environment_reader.get_current_environment.return_value = environment
 
     # Mock prediction to return the new anticipated start time
-    target_time = workflow_context.get(
-        "target_time", datetime(2025, 2, 10, 7, 0, 0, tzinfo=timezone.utc)
-    )
+    target_time = workflow_context.get("target_time", datetime(2025, 2, 10, 7, 0, 0, tzinfo=UTC))
     anticipation_minutes = (target_time - anticipated).total_seconds() / 60.0
 
     mock_prediction_service.predict_heating_time = Mock(
@@ -432,9 +426,9 @@ def anticipated_start_in_future(
 @given("the anticipated start time is still in the past")
 def anticipated_start_in_past(workflow_context, mock_environment_reader, mock_prediction_service):
     """GIVEN: The anticipated start time is before `now` — preheating should continue."""
-    past_time = datetime(2025, 2, 10, 4, 30, 0, tzinfo=timezone.utc)
+    past_time = datetime(2025, 2, 10, 4, 30, 0, tzinfo=UTC)
     workflow_context["anticipated_start_time"] = past_time
-    workflow_context["current_time"] = datetime(2025, 2, 10, 6, 0, 0, tzinfo=timezone.utc)
+    workflow_context["current_time"] = datetime(2025, 2, 10, 6, 0, 0, tzinfo=UTC)
 
     # Configure environment with very low temp (heating urgently needed)
     environment = EnvironmentState(
@@ -446,9 +440,7 @@ def anticipated_start_in_past(workflow_context, mock_environment_reader, mock_pr
     mock_environment_reader.get_current_environment.return_value = environment
 
     # Mock prediction to return anticipated start in the past (trigger immediately)
-    target_time = workflow_context.get(
-        "target_time", datetime(2025, 2, 10, 7, 0, 0, tzinfo=timezone.utc)
-    )
+    target_time = workflow_context.get("target_time", datetime(2025, 2, 10, 7, 0, 0, tzinfo=UTC))
     anticipation_minutes = (target_time - past_time).total_seconds() / 60.0
 
     mock_prediction_service.predict_heating_time = Mock(
@@ -470,8 +462,8 @@ def current_time_past_target(
     hour,
 ):
     """GIVEN: The current time is past the target time."""
-    current = datetime(2025, 2, 10, hour, 5, 0, tzinfo=timezone.utc)
-    target_time = datetime(2025, 2, 10, hour, 0, 0, tzinfo=timezone.utc)
+    current = datetime(2025, 2, 10, hour, 5, 0, tzinfo=UTC)
+    target_time = datetime(2025, 2, 10, hour, 0, 0, tzinfo=UTC)
     workflow_context["current_time"] = current
 
     # Configure scheduler with target time in the past
@@ -544,8 +536,8 @@ def overshoot_risk_detected(
     # - Target time in 30 minutes
     # - projected_temp = 20.5 + (2.0 * 0.5) = 21.5°C >= 21.5°C (overshoot limit)
 
-    target_time = datetime(2025, 2, 10, 7, 30, 0, tzinfo=timezone.utc)
-    current_time = datetime(2025, 2, 10, 7, 0, 0, tzinfo=timezone.utc)
+    target_time = datetime(2025, 2, 10, 7, 30, 0, tzinfo=UTC)
+    current_time = datetime(2025, 2, 10, 7, 0, 0, tzinfo=UTC)
 
     # Preheating must be active for overshoot check to run
     mock_control_preheating._is_preheating_active = True
@@ -641,7 +633,7 @@ def preheating_timer_scheduled(
     minute,
 ):
     """THEN: A preheating timer was created for the anticipated start time."""
-    expected_time = datetime(2025, 2, 10, hour, minute, 0, tzinfo=timezone.utc)
+    expected_time = datetime(2025, 2, 10, hour, minute, 0, tzinfo=UTC)
 
     # Verify timer scheduler was called to schedule a timer
     mock_timer_scheduler.schedule_timer.assert_called_once()
@@ -655,7 +647,7 @@ def preheating_timer_scheduled(
 @then(parsers.parse("the result should contain anticipated start time {hour:d}:{minute:d}"))
 def result_contains_anticipated_start(workflow_context, hour, minute):
     """THEN: The result dict contains the expected anticipated start time."""
-    expected_time = datetime(2025, 2, 10, hour, minute, 0, tzinfo=timezone.utc)
+    expected_time = datetime(2025, 2, 10, hour, minute, 0, tzinfo=UTC)
     result = workflow_context["result"]
     assert result is not None, "Result should not be None"
     assert result["anticipated_start_time"] == expected_time
@@ -706,7 +698,7 @@ def active_preheating_canceled(workflow_context, mock_scheduler_commander):
 @then(parsers.parse("a new preheating timer should be rescheduled for {hour:d}:{minute:d}"))
 def new_preheating_rescheduled(mock_timer_scheduler, hour, minute):
     """THEN: A new timer was created at the updated anticipated start time."""
-    expected_time = datetime(2025, 2, 10, hour, minute, 0, tzinfo=timezone.utc)
+    expected_time = datetime(2025, 2, 10, hour, minute, 0, tzinfo=UTC)
 
     # Verify timer was rescheduled (should be called at least once)
     mock_timer_scheduler.schedule_timer.assert_called()

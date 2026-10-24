@@ -8,7 +8,7 @@ and cancels preheating to prevent overheating.
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -152,7 +152,7 @@ def next_target_configured(
     minute,
 ):
     """GIVEN: The next scheduled target temperature and time."""
-    target_time = datetime(2025, 2, 10, hour, minute, 0, tzinfo=timezone.utc)
+    target_time = datetime(2025, 2, 10, hour, minute, 0, tzinfo=UTC)
     target_temp = float(temp)
     overshoot_context["target_time"] = target_time
     overshoot_context["target_temp"] = target_temp
@@ -183,7 +183,7 @@ def current_temperature_overshoot(
     overshoot_context["current_temp"] = current_temp
 
     current_time = overshoot_context.get("current_time") or datetime(
-        2025, 2, 10, 6, 30, 0, tzinfo=timezone.utc
+        2025, 2, 10, 6, 30, 0, tzinfo=UTC
     )
     environment = EnvironmentState(
         timestamp=current_time,
@@ -206,7 +206,7 @@ def current_slope_overshoot(overshoot_context, mock_climate_data_reader, slope):
 @given(parsers.parse("the current time is {hour:d}:{minute:d}"))
 def current_time_overshoot(overshoot_context, mock_environment_reader, hour, minute):
     """GIVEN: The current time for overshoot calculation."""
-    current_time = datetime(2025, 2, 10, hour, minute, 0, tzinfo=timezone.utc)
+    current_time = datetime(2025, 2, 10, hour, minute, 0, tzinfo=UTC)
     overshoot_context["current_time"] = current_time
 
     # Update environment with correct timestamp if already set

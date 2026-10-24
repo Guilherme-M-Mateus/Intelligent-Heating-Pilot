@@ -9,7 +9,7 @@ These tests are RED phase tests (should FAIL with current code).
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -137,7 +137,7 @@ class TestHeatingCycleLifecycleManagerDeadTimeCalculation:
 
         RED: FAILS because update_cycles_for_window() doesn't call dead_time calculation yet.
         """
-        base_time = datetime(2025, 2, 10, 12, 0, 0, tzinfo=timezone.utc)
+        base_time = datetime(2025, 2, 10, 12, 0, 0, tzinfo=UTC)
 
         # Create cycles with dead_time values
         cycles_with_dead_time = [
@@ -152,7 +152,7 @@ class TestHeatingCycleLifecycleManagerDeadTimeCalculation:
 
         # Call update_cycles_for_window which should trigger dead_time calculation
         await lifecycle_manager_dead_time.update_cycles_for_window(
-            "climate.test_vtherm", base_time, datetime.now(timezone.utc)
+            "climate.test_vtherm", base_time, datetime.now(UTC)
         )
 
         # Verify that set_learned_dead_time was called with the average
@@ -169,7 +169,7 @@ class TestHeatingCycleLifecycleManagerDeadTimeCalculation:
 
         RED: FAILS because calculation logic isn't implemented.
         """
-        base_time = datetime(2025, 2, 10, 12, 0, 0, tzinfo=timezone.utc)
+        base_time = datetime(2025, 2, 10, 12, 0, 0, tzinfo=UTC)
 
         cycles = [
             create_heating_cycle_with_dead_time(base_time, 5.0),
@@ -181,7 +181,7 @@ class TestHeatingCycleLifecycleManagerDeadTimeCalculation:
         )
 
         await lifecycle_manager_dead_time.update_cycles_for_window(
-            "climate.test_vtherm", base_time, datetime.now(timezone.utc)
+            "climate.test_vtherm", base_time, datetime.now(UTC)
         )
 
         # Should persist average: (5.0 + 10.0) / 2 = 7.5
@@ -197,7 +197,7 @@ class TestHeatingCycleLifecycleManagerDeadTimeCalculation:
 
         RED: FAILS - behavior depends on implementation choice.
         """
-        base_time = datetime(2025, 2, 10, 12, 0, 0, tzinfo=timezone.utc)
+        base_time = datetime(2025, 2, 10, 12, 0, 0, tzinfo=UTC)
 
         cycles = [
             create_heating_cycle_with_dead_time(base_time, None),
@@ -209,7 +209,7 @@ class TestHeatingCycleLifecycleManagerDeadTimeCalculation:
         )
 
         await lifecycle_manager_dead_time.update_cycles_for_window(
-            "climate.test_vtherm", base_time, datetime.now(timezone.utc)
+            "climate.test_vtherm", base_time, datetime.now(UTC)
         )
 
         # set_learned_dead_time should not be called with an average
@@ -232,7 +232,7 @@ class TestHeatingCycleLifecycleManagerDeadTimeCalculation:
 
         RED: FAILS if filtering logic isn't implemented.
         """
-        base_time = datetime(2025, 2, 10, 12, 0, 0, tzinfo=timezone.utc)
+        base_time = datetime(2025, 2, 10, 12, 0, 0, tzinfo=UTC)
 
         cycles = [
             create_heating_cycle_with_dead_time(base_time, 8.0),
@@ -246,7 +246,7 @@ class TestHeatingCycleLifecycleManagerDeadTimeCalculation:
         )
 
         await lifecycle_manager_dead_time.update_cycles_for_window(
-            "climate.test_vtherm", base_time, datetime.now(timezone.utc)
+            "climate.test_vtherm", base_time, datetime.now(UTC)
         )
 
         # Should average only 8.0 and 12.0: (8.0 + 12.0) / 2 = 10.0
@@ -259,7 +259,7 @@ class TestHeatingCycleLifecycleManagerDeadTimeCalculation:
         mock_lhs_storage_dead_time: Mock,
     ) -> None:
         """Test dead_time calculation with single cycle."""
-        base_time = datetime(2025, 2, 10, 12, 0, 0, tzinfo=timezone.utc)
+        base_time = datetime(2025, 2, 10, 12, 0, 0, tzinfo=UTC)
 
         cycles = [create_heating_cycle_with_dead_time(base_time, 6.5)]
 
@@ -268,7 +268,7 @@ class TestHeatingCycleLifecycleManagerDeadTimeCalculation:
         )
 
         await lifecycle_manager_dead_time.update_cycles_for_window(
-            "climate.test_vtherm", base_time, datetime.now(timezone.utc)
+            "climate.test_vtherm", base_time, datetime.now(UTC)
         )
 
         # Should persist the single value
@@ -296,14 +296,12 @@ class TestHeatingCycleLifecycleManagerDeadTimeCalculation:
             lhs_lifecycle_manager=None,
         )
 
-        base_time = datetime(2025, 2, 10, 12, 0, 0, tzinfo=timezone.utc)
+        base_time = datetime(2025, 2, 10, 12, 0, 0, tzinfo=UTC)
         cycles = [create_heating_cycle_with_dead_time(base_time, 8.0)]
 
         manager._heating_cycle_service.extract_heating_cycles = AsyncMock(return_value=cycles)
 
-        await manager.update_cycles_for_window(
-            "climate.test_vtherm", base_time, datetime.now(timezone.utc)
-        )
+        await manager.update_cycles_for_window("climate.test_vtherm", base_time, datetime.now(UTC))
 
         # set_learned_dead_time should NOT be called
         mock_lhs_storage_dead_time.set_learned_dead_time.assert_not_called()

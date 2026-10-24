@@ -10,16 +10,22 @@ permissions:
   contents: read
   pull-requests: write
 
+# Dependabot branches (dependabot/...) cannot follow the naming convention and do
+# not touch the CHANGELOG, so those checks are skipped for them; tests still run.
+# Dependabot runs and PRs from forks get a read-only token, so PR comments are
+# skipped for them (the check result itself still reports success or failure).
+
 jobs:
   validate-pr:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Validate branch naming
+        if: github.event.pull_request.user.login != 'dependabot[bot]'
         run: |
           BRANCH="${{ github.head_ref }}"
 
@@ -34,6 +40,7 @@ jobs:
 
       - name: Check CHANGELOG update
         id: changelog-check
+        if: github.event.pull_request.user.login != 'dependabot[bot]'
         run: |
           BRANCH="${{ github.head_ref }}"
           SECTION="Added"
@@ -61,10 +68,10 @@ jobs:
           fi
 
           HEAD_UNRELEASED=$(printf '%s\n' "$HEAD_CHANGELOG_CONTENT" \
-            | awk '/## \[Unreleased\]/{flag=1;next} /^## \[/{flag=0} flag{print}' \
+            | awk '/^## \[Unreleased\]$/{flag=1;next} /^## \[/{flag=0} flag{print}' \
             | grep -v '^[[:space:]]*$' || true)
           BASE_UNRELEASED=$(printf '%s\n' "$BASE_CHANGELOG_CONTENT" \
-            | awk '/## \[Unreleased\]/{flag=1;next} /^## \[/{flag=0} flag{print}' \
+            | awk '/^## \[Unreleased\]$/{flag=1;next} /^## \[/{flag=0} flag{print}' \
             | grep -v '^[[:space:]]*$' || true)
 
           NEW_LINES=$(diff <(printf '%s\n' "$BASE_UNRELEASED") <(printf '%s\n' "$HEAD_UNRELEASED") \
@@ -83,7 +90,7 @@ jobs:
           echo "✅ CHANGELOG [Unreleased] section updated ($NEW_LINES new line(s))"
 
       - name: Suggest CHANGELOG template
-        if: steps.changelog-check.outcome == 'failure'
+        if: steps.changelog-check.outcome == 'failure' && github.event.pull_request.head.repo.full_name == github.repository
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -116,7 +123,7 @@ jobs:
           "
 
       - name: Check for documentation updates on features
-        if: startsWith(github.head_ref, 'feature-')
+        if: startsWith(github.head_ref, 'feature-') && github.event.pull_request.head.repo.full_name == github.repository
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -135,7 +142,7 @@ jobs:
 
       - name: Set up Python
         id: setup-python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.13'
 
@@ -147,7 +154,7 @@ jobs:
           virtualenvs-in-project: true
 
       - name: Cache dependencies
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: .venv
           key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
@@ -158,14 +165,15 @@ jobs:
         run: poetry install --no-interaction
 
       - name: Run tests
+        id: tests
         run: poetry run pytest tests/unit -v
 
       - name: Comment test results
-        if: always()
+        if: always() && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ $? -eq 0 ]; then
+          if [ "${{ steps.tests.outcome }}" == "success" ]; then
             gh pr comment ${{ github.event.pull_request.number }} --body "✅ **Tests unitaires réussis**"
           else
             gh pr comment ${{ github.event.pull_request.number }} --body "❌ **Tests unitaires échoués**

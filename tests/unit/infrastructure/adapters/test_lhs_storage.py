@@ -5,7 +5,7 @@ to persist the learned heating slope (LHS).
 """
 
 import inspect
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -283,7 +283,7 @@ async def test_get_cached_global_lhs_none(storage: HALhsStorage) -> None:
 async def test_set_and_get_cached_global_lhs(storage: HALhsStorage, mock_store: Mock) -> None:
     """Test setting and getting global LHS cache."""
     lhs_value = 2.8
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # Set cache
     await storage.set_cached_global_lhs(lhs_value, now)
@@ -311,7 +311,7 @@ async def test_set_and_get_cached_contextual_lhs(storage: HALhsStorage, mock_sto
     """Test setting and getting contextual LHS cache."""
     lhs_value = 3.2
     hour = 14
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # Set cache
     await storage.set_cached_contextual_lhs(hour, lhs_value, now)
@@ -403,7 +403,7 @@ async def test_deserialize_invalid_cache_entry(storage: HALhsStorage) -> None:
 async def test_serialize_deserialize_roundtrip(storage: HALhsStorage) -> None:
     """Test that serialization/deserialization is reversible."""
     original_value = 2.75
-    original_time = datetime.now(timezone.utc)
+    original_time = datetime.now(UTC)
 
     # Serialize
     serialized = storage._serialize_lhs_cache_entry(original_value, original_time)

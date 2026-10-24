@@ -27,9 +27,11 @@ These sensors help IHP make better predictions but are **not required**:
 
 | Sensor | Purpose | Example |
 |--------|---------|---------|
-| **Humidity Sensor** | Adjusts calculations for moisture impact | `sensor.living_room_humidity` |
-| **Outdoor Temp Sensor** | Accounts for outdoor conditions | `sensor.outdoor_temperature` |
+| **Indoor Humidity Sensor** | Adjusts calculations for moisture impact | `sensor.living_room_humidity` |
+| **Outdoor Humidity Sensor** | Monitored; not used in the prediction yet | `sensor.outdoor_humidity` |
 | **Cloud Coverage Sensor** | Adjusts for solar gain | `sensor.cloud_coverage` |
+
+> **Note:** An outdoor temperature sensor cannot be configured yet, so the outdoor temperature adjustment is not applied. The learned heating slope comes from your recent heating cycles and therefore already reflects recent weather.
 
 ### Step 4: Complete Setup
 
