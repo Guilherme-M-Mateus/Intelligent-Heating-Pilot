@@ -475,3 +475,53 @@ class TestScheduleAnticipationActionRevertLogic:
             assert schedule_anticipation_action_use_case._control_preheating.is_preheating_active()
             timer_scheduler = schedule_anticipation_action_use_case._timer_scheduler
             assert len(timer_scheduler.scheduled_timers) == 0  # type: ignore
+
+
+class TestScheduleAnticipationActionStateTransitions:
+    """Test preheating state transitions around target reached and slot completion."""
+
+    @pytest.mark.asyncio
+    async def test_completed_preheating_does_not_block_next_slot(
+        self,
+        schedule_anticipation_action_use_case: ScheduleAnticipationActionUseCase,
+        control_preheating_use_case,
+        scheduler_reader,
+        test_now: datetime,
+    ) -> None:
+        """A preheat whose slot has passed must not prevent anticipating the next slot.
+
+        GIVEN: Preheating was started for a slot that fired 5 minutes ago
+        WHEN: A recalculation targets the next slot, 10 hours ahead
+        THEN: The old preheat is marked complete without reverting the thermostat,
+              and a timer is scheduled for the next slot's anticipated start
+        """
+        past_target = test_now - timedelta(minutes=5)
+        next_target = test_now + timedelta(hours=10)
+        next_start = next_target - timedelta(hours=1)
+        scheduler_reader.is_scheduler_enabled = AsyncMock(return_value=True)
+        schedule_anticipation_action_use_case._control_preheating = control_preheating_use_case
+
+        with patch.object(dt_util, "now", return_value=test_now):
+            await control_preheating_use_case.start_preheating(
+                target_time=past_target,
+                target_temp=19.0,
+                scheduler_entity_id="schedule.heating",
+            )
+            control_preheating_use_case._scheduler_commander.cancel_action = AsyncMock()
+
+            await schedule_anticipation_action_use_case.handle_anticipation_scheduling(
+                anticipation_data={
+                    "anticipated_start_time": next_start,
+                    "next_schedule_time": next_target,
+                    "next_target_temperature": 20.0,
+                    "scheduler_entity": "schedule.heating",
+                    "learned_heating_slope": 2.0,
+                    "anticipation_minutes": 60,
+                },
+                ihp_enabled=True,
+            )
+
+        assert not control_preheating_use_case.is_preheating_active()
+        control_preheating_use_case._scheduler_commander.cancel_action.assert_not_awaited()
+        timer_scheduler = schedule_anticipation_action_use_case._timer_scheduler
+        assert [t for t, _ in timer_scheduler.scheduled_timers] == [next_start]  # type: ignore
