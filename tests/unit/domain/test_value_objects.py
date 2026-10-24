@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -43,7 +43,7 @@ def test_environment_state_creation() -> None:
 
 def test_environment_state_with_optional_fields() -> None:
     """Test environment state with optional fields."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     state = EnvironmentState(
         indoor_temperature=20.0,
         outdoor_temp=10.0,
@@ -59,7 +59,7 @@ def test_environment_state_with_optional_fields() -> None:
 
 def test_environment_state_humidity_validation() -> None:
     """Test that humidity must be between 0 and 100."""
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
 
     # Humidity too high
     with pytest.raises(ValueError):
@@ -87,7 +87,7 @@ def test_environment_state_humidity_validation() -> None:
 
 def test_scheduled_timeslot_creation() -> None:
     """Test creating a valid scheduled timeslot."""
-    target_time = datetime.now(timezone.utc)
+    target_time = datetime.now(UTC)
     event = ScheduledTimeslot(
         target_time=target_time,
         target_temp=21.0,
@@ -101,7 +101,7 @@ def test_scheduled_timeslot_creation() -> None:
 
 def test_scheduled_timeslot_requires_id() -> None:
     """Test that timeslot_id cannot be empty."""
-    target_time = datetime.now(timezone.utc)
+    target_time = datetime.now(UTC)
 
     with pytest.raises(ValueError):
         ScheduledTimeslot(
@@ -118,7 +118,7 @@ def test_scheduled_timeslot_requires_id() -> None:
 
 def test_prediction_result_creation() -> None:
     """Test creating a valid prediction result."""
-    start_time = datetime.now(timezone.utc)
+    start_time = datetime.now(UTC)
     result = PredictionResult(
         anticipated_start_time=start_time,
         estimated_duration_minutes=90.0,
@@ -134,7 +134,7 @@ def test_prediction_result_creation() -> None:
 
 def test_prediction_result_validation() -> None:
     """Test prediction result validation."""
-    start_time = datetime.now(timezone.utc)
+    start_time = datetime.now(UTC)
 
     # Negative duration
     with pytest.raises(ValueError):

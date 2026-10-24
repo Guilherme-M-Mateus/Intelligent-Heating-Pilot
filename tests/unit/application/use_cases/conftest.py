@@ -6,7 +6,7 @@ Tests the real use case logic with real adapters mocking only HA.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -215,7 +215,7 @@ def check_overshoot_risk_use_case(
 @pytest.fixture
 def test_now() -> datetime:
     """Current test time."""
-    return datetime(2025, 2, 10, 5, 0, 0, tzinfo=timezone.utc)
+    return datetime(2025, 2, 10, 5, 0, 0, tzinfo=UTC)
 
 
 @pytest.fixture

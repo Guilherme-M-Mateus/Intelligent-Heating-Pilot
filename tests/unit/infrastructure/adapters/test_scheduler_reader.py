@@ -1,6 +1,6 @@
 """Tests for HASchedulerReader adapter."""
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import Mock
 
 import pytest
@@ -558,7 +558,7 @@ async def test_is_scheduler_enabled_native_schedule_unavailable(
 
 def test_parse_datetime_value_datetime_object(reader: HASchedulerReader) -> None:
     """Test that _parse_datetime_value handles datetime objects directly."""
-    dt = datetime(2024, 1, 15, 7, 0, 0, tzinfo=timezone.utc)
+    dt = datetime(2024, 1, 15, 7, 0, 0, tzinfo=UTC)
 
     result = reader._parse_datetime_value(dt)
 
@@ -605,9 +605,7 @@ def test_get_native_schedule_temperature_climate_reader_returns_none(mock_hass: 
     """Test that _get_native_schedule_temperature returns 20.0°C when climate reader returns None."""
     mock_climate_reader = Mock()
     mock_climate_reader.get_current_target_temperature.return_value = None
-    reader = HASchedulerReader(
-        mock_hass, ["schedule.test"], climate_reader=mock_climate_reader
-    )
+    reader = HASchedulerReader(mock_hass, ["schedule.test"], climate_reader=mock_climate_reader)
 
     result = reader._get_native_schedule_temperature()
 
@@ -619,9 +617,7 @@ def test_get_native_schedule_temperature_from_climate_reader(mock_hass: Mock) ->
     """Test that _get_native_schedule_temperature reads temperature from the climate reader."""
     mock_climate_reader = Mock()
     mock_climate_reader.get_current_target_temperature.return_value = 22.0
-    reader = HASchedulerReader(
-        mock_hass, ["schedule.test"], climate_reader=mock_climate_reader
-    )
+    reader = HASchedulerReader(mock_hass, ["schedule.test"], climate_reader=mock_climate_reader)
 
     result = reader._get_native_schedule_temperature()
 
