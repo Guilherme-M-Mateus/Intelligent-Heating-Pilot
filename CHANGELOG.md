@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- **Release promotion failing before publishing** – The promotion workflow tried to auto-merge its CHANGELOG PR with squash, which the `main` ruleset forbids, and treated that as fatal: the stable release was never created and the RC was left in place (0.6.4 was published by hand). The release is now created first, auto-merge uses a merge commit, and an auto-merge failure only emits a warning.
+
 ## [0.6.4] - 2026-10-24
 
 ### Added
