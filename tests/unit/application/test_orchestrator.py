@@ -147,6 +147,21 @@ class TestHeatingOrchestrator:
         mock_control_preheating.cancel_preheating.assert_called_once_with("schedule.heating")
 
     @pytest.mark.asyncio
+    async def test_cancel_pending_anticipation_cancels_timer_only(
+        self,
+        orchestrator: HeatingOrchestrator,
+        mock_control_preheating: Mock,
+        mock_schedule_anticipation_action: Mock,
+    ) -> None:
+        """Pending timer is cancelled without reverting the thermostat (used on unload)."""
+        mock_control_preheating.is_preheating_active.return_value = True
+
+        await orchestrator.cancel_pending_anticipation()
+
+        mock_schedule_anticipation_action.cancel_action.assert_awaited_once()
+        mock_control_preheating.cancel_preheating.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_disable_preheating_skips_cancel_when_not_active(
         self,
         orchestrator: HeatingOrchestrator,
