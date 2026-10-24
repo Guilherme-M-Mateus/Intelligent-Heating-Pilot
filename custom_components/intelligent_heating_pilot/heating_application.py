@@ -726,6 +726,12 @@ class HeatingApplication:
         _LOGGER.debug("Cleaning up coordinator: device_id=%s", self._device_config.device_id)
 
         try:
+            # Cancel the anticipation timer: it is registered with HA and would
+            # otherwise fire for this unloaded instance after a reload
+            if self._orchestrator:
+                await self._orchestrator.cancel_pending_anticipation()
+                _LOGGER.debug("Anticipation timer cancelled")
+
             # Clean up event bridge first (cancels pending tasks)
             if self._event_bridge:
                 await self._event_bridge.async_cleanup()

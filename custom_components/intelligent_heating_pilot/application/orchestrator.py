@@ -87,6 +87,15 @@ class HeatingOrchestrator:
         _LOGGER.debug("Exiting calculate_anticipation_only() -> data")
         return result
 
+    async def cancel_pending_anticipation(self) -> None:
+        """Cancel the pending anticipation timer without touching the thermostat.
+
+        Used on unload/reload: reverting an active preheat there would cause a
+        setpoint flap, since the reloaded instance re-triggers it if still due.
+        """
+        _LOGGER.debug("Entering HeatingOrchestrator.cancel_pending_anticipation()")
+        await self._schedule_anticipation_action.cancel_action()
+
     async def disable_preheating(self, scheduler_entity_id: str) -> None:
         """Disable preheating (cancel timer and active preheating).
 
