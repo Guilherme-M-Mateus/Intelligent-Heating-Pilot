@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.4] - 2026-10-24
+
 ### Added
 - **Integration icon in Home Assistant 2026.3+** – Brand images are now shipped in the integration's `brand/` folder, where Home Assistant 2026.3 and later loads the icon of custom integrations (contributed by frenck).
 
