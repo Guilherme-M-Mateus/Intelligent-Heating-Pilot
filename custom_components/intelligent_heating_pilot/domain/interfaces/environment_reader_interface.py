@@ -38,14 +38,15 @@ class IEnvironmentReader(ABC):
         Returns:
             EnvironmentState with current conditions (indoor_temperature,
             outdoor_temp, humidity, cloud_coverage, timestamp), or None
-            if required data (indoor_temperature, humidity, outdoor_temp)
-            is unavailable.
+            if indoor_temperature is unavailable.
 
         Edge Cases:
             - Returns None if VTherm entity is missing
             - Returns None if indoor_temperature cannot be read
             - Sensor-specific fallbacks:
-                - outdoor_temp: Falls back to indoor_temperature if unavailable
+                - outdoor_temp: None if unavailable (the prediction then skips
+                  the outdoor correction; substituting the indoor temperature
+                  would apply a correction computed from the wrong quantity)
                 - indoor_humidity: Uses 50% default if unavailable
                 - outdoor_humidity, cloud_coverage: Optional (can be None)
         """

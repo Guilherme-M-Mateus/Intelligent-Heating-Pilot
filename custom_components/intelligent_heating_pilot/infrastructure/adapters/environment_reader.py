@@ -81,12 +81,10 @@ class HAEnvironmentReader(IEnvironmentReader):
             _LOGGER.warning("Invalid current_temperature: %s", current_temp_raw)
             return None
 
-        # Get outdoor temperature (required for EnvironmentState)
+        # Outdoor temperature is optional: a missing value stays None so the domain
+        # skips the outdoor correction. Substituting the indoor temperature made it
+        # apply a 10-20% correction computed from the wrong quantity.
         outdoor_temp = self._get_float_state(self._outdoor_temp_entity_id)
-        if outdoor_temp is None:
-            # Fallback: use current temp if outdoor not available
-            outdoor_temp = current_temp
-            _LOGGER.debug("No outdoor temp available, using indoor temp as fallback")
 
         # Get humidity (required for EnvironmentState)
         humidity = self._get_float_state(self._humidity_in_entity_id)
