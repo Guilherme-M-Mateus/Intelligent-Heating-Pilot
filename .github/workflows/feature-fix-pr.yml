@@ -10,6 +10,10 @@ permissions:
   contents: read
   pull-requests: write
 
+# Dependabot branches (dependabot/...) cannot follow the naming convention and do
+# not touch the CHANGELOG, so those checks are skipped for them; tests still run.
+# Dependabot runs also get a read-only token, so PR comments are skipped too.
+
 jobs:
   validate-pr:
     runs-on: ubuntu-latest
@@ -20,6 +24,7 @@ jobs:
           fetch-depth: 0
 
       - name: Validate branch naming
+        if: github.event.pull_request.user.login != 'dependabot[bot]'
         run: |
           BRANCH="${{ github.head_ref }}"
 
@@ -34,6 +39,7 @@ jobs:
 
       - name: Check CHANGELOG update
         id: changelog-check
+        if: github.event.pull_request.user.login != 'dependabot[bot]'
         run: |
           BRANCH="${{ github.head_ref }}"
           SECTION="Added"
@@ -135,7 +141,7 @@ jobs:
 
       - name: Set up Python
         id: setup-python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: '3.13'
 
@@ -158,14 +164,15 @@ jobs:
         run: poetry install --no-interaction
 
       - name: Run tests
+        id: tests
         run: poetry run pytest tests/unit -v
 
       - name: Comment test results
-        if: always()
+        if: always() && github.event.pull_request.user.login != 'dependabot[bot]'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ $? -eq 0 ]; then
+          if [ "${{ steps.tests.outcome }}" == "success" ]; then
             gh pr comment ${{ github.event.pull_request.number }} --body "✅ **Tests unitaires réussis**"
           else
             gh pr comment ${{ github.event.pull_request.number }} --body "❌ **Tests unitaires échoués**

@@ -6,7 +6,7 @@ preheating triggers at the anticipated start time.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -19,7 +19,7 @@ from custom_components.intelligent_heating_pilot.application.use_cases import (
 
 def make_aware(dt: datetime) -> datetime:
     """Make a datetime timezone-aware (UTC)."""
-    return dt.replace(tzinfo=timezone.utc)
+    return dt.replace(tzinfo=UTC)
 
 
 @pytest.fixture

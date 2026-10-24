@@ -1,7 +1,7 @@
 """Tests for LHS calculator services."""
 
 import unittest
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 from custom_components.intelligent_heating_pilot.domain.constants import DEFAULT_LEARNED_SLOPE
 from custom_components.intelligent_heating_pilot.domain.services import (
@@ -51,7 +51,7 @@ class TestGlobalLHSCalculatorService(unittest.TestCase):
     def test_calculate_global_lhs_single_cycle(self):
         """Test calculating global LHS with a single cycle."""
         # Create a cycle with 2°C increase in 1 hour = 2°C/h slope
-        base_time = datetime(2025, 12, 18, 14, 0, 0, tzinfo=timezone.utc)
+        base_time = datetime(2025, 12, 18, 14, 0, 0, tzinfo=UTC)
         cycle = self._create_cycle(start_time=base_time, duration_hours=1.0, temp_increase=2.0)
 
         result = self.service.calculate_global_lhs([cycle])
@@ -61,7 +61,7 @@ class TestGlobalLHSCalculatorService(unittest.TestCase):
 
     def test_calculate_global_lhs_multiple_cycles(self):
         """Test calculating global LHS with multiple cycles."""
-        base_time = datetime(2025, 12, 18, 14, 0, 0, tzinfo=timezone.utc)
+        base_time = datetime(2025, 12, 18, 14, 0, 0, tzinfo=UTC)
 
         # Create cycles with different slopes: 2.0, 2.2, 2.4 °C/h
         cycles = [
@@ -81,7 +81,7 @@ class TestGlobalLHSCalculatorService(unittest.TestCase):
 
     def test_calculate_global_lhs_with_varying_durations(self):
         """Test that global LHS handles cycles of different durations correctly."""
-        base_time = datetime(2025, 12, 18, 14, 0, 0, tzinfo=timezone.utc)
+        base_time = datetime(2025, 12, 18, 14, 0, 0, tzinfo=UTC)
 
         # Different durations but similar heating rates
         cycles = [
@@ -146,7 +146,7 @@ class TestContextualLHSCalculatorService(unittest.TestCase):
 
     def test_calculate_contextual_lhs_filters_by_start_hour(self):
         """Test contextual LHS filters cycles by start hour."""
-        base_time = datetime(2025, 12, 18, 14, 0, 0, tzinfo=timezone.utc)
+        base_time = datetime(2025, 12, 18, 14, 0, 0, tzinfo=UTC)
 
         cycles = [
             self._create_cycle(base_time, duration_hours=1.0, temp_increase=1.0),
@@ -165,7 +165,7 @@ class TestContextualLHSCalculatorService(unittest.TestCase):
 
     def test_group_cycles_by_start_hour(self):
         """Test grouping cycles by start hour."""
-        base_time = datetime(2025, 12, 18, 8, 0, 0, tzinfo=timezone.utc)
+        base_time = datetime(2025, 12, 18, 8, 0, 0, tzinfo=UTC)
 
         cycles = [
             self._create_cycle(base_time, duration_hours=1.0, temp_increase=1.0),
@@ -184,7 +184,7 @@ class TestContextualLHSCalculatorService(unittest.TestCase):
 
     def test_calculate_all_contextual_lhs(self):
         """Test calculating contextual LHS for all 24 hours."""
-        base_time = datetime(2025, 12, 18, 6, 0, 0, tzinfo=timezone.utc)
+        base_time = datetime(2025, 12, 18, 6, 0, 0, tzinfo=UTC)
         cycles = [
             self._create_cycle(base_time, duration_hours=1.0, temp_increase=2.0),
             self._create_cycle(

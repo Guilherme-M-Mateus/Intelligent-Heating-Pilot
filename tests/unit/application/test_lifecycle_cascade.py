@@ -9,7 +9,7 @@ Purpose: Test complete cascade flow: cycles change → LHS recalculates
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -67,9 +67,7 @@ class TestLifecycleCascadeFlow:
     ) -> None:
         """Configure mock storage to return cycles from get_cache_data after append."""
         # Ensure timezone-aware timestamp for HeatingCycleCacheData validation
-        tz_aware_time = (
-            base_datetime if base_datetime.tzinfo else base_datetime.replace(tzinfo=timezone.utc)
-        )
+        tz_aware_time = base_datetime if base_datetime.tzinfo else base_datetime.replace(tzinfo=UTC)
         manager._heating_cycle_storage.get_cache_data = AsyncMock(
             return_value=HeatingCycleCacheData(
                 device_id="climate.test_vtherm",

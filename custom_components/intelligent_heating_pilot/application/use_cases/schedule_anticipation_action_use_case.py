@@ -7,7 +7,8 @@ anticipation calculations, including revert logic when conditions change.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING, Callable
+from collections.abc import Callable
+from typing import TYPE_CHECKING
 
 from homeassistant.util import dt as dt_util
 

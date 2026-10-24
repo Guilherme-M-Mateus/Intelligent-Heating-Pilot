@@ -14,7 +14,7 @@ They do NOT test internal implementation details like parameter passing.
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -210,7 +210,7 @@ def scheduler_configured(ihp_switch_context, scheduler_id, target_temp, target_h
 def current_temperature_at_time(ihp_switch_context, temp, hour):
     """GIVEN: Set current temperature and time."""
     ihp_switch_context["current_temp"] = float(temp)
-    ihp_switch_context["current_time"] = datetime(2025, 2, 10, hour, 0, 0, tzinfo=timezone.utc)
+    ihp_switch_context["current_time"] = datetime(2025, 2, 10, hour, 0, 0, tzinfo=UTC)
 
 
 @given(parsers.parse("the learned heating slope is {slope:d}°C per hour"))
@@ -236,20 +236,18 @@ def ihp_switch_turned_on(ihp_switch_context):
 def preheating_started_at(ihp_switch_context, hour, temp, orchestrator_ihp_switch):
     """GIVEN: Preheating is already active."""
     ihp_switch_context["preheating_active"] = True
-    ihp_switch_context["preheating_start_time"] = datetime(
-        2025, 2, 10, hour, 30, 0, tzinfo=timezone.utc
-    )
+    ihp_switch_context["preheating_start_time"] = datetime(2025, 2, 10, hour, 30, 0, tzinfo=UTC)
     ihp_switch_context["vtherm_setpoint"] = float(temp)
 
     schedule_use_case = orchestrator_ihp_switch._schedule_anticipation_action
     schedule_use_case._preheating_target_temp = float(temp)
-    schedule_use_case._last_scheduled_time = datetime(2025, 2, 10, hour, 30, 0, tzinfo=timezone.utc)
+    schedule_use_case._last_scheduled_time = datetime(2025, 2, 10, hour, 30, 0, tzinfo=UTC)
 
 
 @given(parsers.parse("the current time is {hour:d}:00 and preheating is active"))
 def current_time_and_preheating_active(ihp_switch_context, hour):
     """GIVEN: Set current time with active preheating."""
-    ihp_switch_context["current_time"] = datetime(2025, 2, 10, hour, 0, 0, tzinfo=timezone.utc)
+    ihp_switch_context["current_time"] = datetime(2025, 2, 10, hour, 0, 0, tzinfo=UTC)
     ihp_switch_context["preheating_active"] = True
 
 
@@ -257,7 +255,7 @@ def current_time_and_preheating_active(ihp_switch_context, hour):
 def ihp_switch_turned_off_at(ihp_switch_context, hour):
     """GIVEN: IHP was disabled at a specific time."""
     ihp_switch_context["ihp_enabled"] = False
-    ihp_switch_context["switch_off_time"] = datetime(2025, 2, 10, hour, 0, 0, tzinfo=timezone.utc)
+    ihp_switch_context["switch_off_time"] = datetime(2025, 2, 10, hour, 0, 0, tzinfo=UTC)
 
 
 @given("no preheating was active")
@@ -296,10 +294,8 @@ def system_calculates_anticipation_at(
     hour,
 ):
     """WHEN: System performs anticipation calculation at a specific hour."""
-    current_time = datetime(2025, 2, 10, hour, 0, 0, tzinfo=timezone.utc)
-    target_time = datetime(
-        2025, 2, 10, ihp_switch_context["target_hour"], 0, 0, tzinfo=timezone.utc
-    )
+    current_time = datetime(2025, 2, 10, hour, 0, 0, tzinfo=UTC)
+    target_time = datetime(2025, 2, 10, ihp_switch_context["target_hour"], 0, 0, tzinfo=UTC)
 
     # Setup mocks
     timeslot = ScheduledTimeslot(
@@ -350,9 +346,7 @@ def user_turns_off_ihp_switch(
 
     # Trigger recalculation with IHP disabled
     current_time = ihp_switch_context["current_time"]
-    target_time = datetime(
-        2025, 2, 10, ihp_switch_context["target_hour"], 0, 0, tzinfo=timezone.utc
-    )
+    target_time = datetime(2025, 2, 10, ihp_switch_context["target_hour"], 0, 0, tzinfo=UTC)
 
     timeslot = ScheduledTimeslot(
         target_time=target_time,
@@ -388,7 +382,7 @@ def user_turns_on_ihp_switch_at(
 ):
     """WHEN: User re-enables IHP."""
     ihp_switch_context["ihp_enabled"] = True
-    ihp_switch_context["current_time"] = datetime(2025, 2, 10, hour, 15, 0, tzinfo=timezone.utc)
+    ihp_switch_context["current_time"] = datetime(2025, 2, 10, hour, 15, 0, tzinfo=UTC)
 
 
 @when("the system recalculates anticipation")
@@ -399,9 +393,7 @@ def system_recalculates_anticipation(
 ):
     """WHEN: System performs recalculation after re-enabling."""
     current_time = ihp_switch_context["current_time"]
-    target_time = datetime(
-        2025, 2, 10, ihp_switch_context["target_hour"], 0, 0, tzinfo=timezone.utc
-    )
+    target_time = datetime(2025, 2, 10, ihp_switch_context["target_hour"], 0, 0, tzinfo=UTC)
 
     timeslot = ScheduledTimeslot(
         target_time=target_time,
@@ -502,7 +494,7 @@ def system_processes_all_events(
     for time_str in event_times:
         # Parse time (e.g., "07:00")
         hour, minute = map(int, time_str.split(":"))
-        target_time = datetime(2025, 2, 10, hour, minute, 0, tzinfo=timezone.utc)
+        target_time = datetime(2025, 2, 10, hour, minute, 0, tzinfo=UTC)
 
         # Calculate 2 hours before the event (time to calculate anticipation)
         calc_time = target_time.replace(hour=max(0, hour - 2))
@@ -598,9 +590,7 @@ def preheating_scheduled_at(ihp_switch_context, hour):
     assert anticipated is not None, "Anticipated start time should be calculated"
 
     # Verify preheating is scheduled before the target time (observable behavior)
-    target_time = datetime(
-        2025, 2, 10, ihp_switch_context["target_hour"], 0, 0, tzinfo=timezone.utc
-    )
+    target_time = datetime(2025, 2, 10, ihp_switch_context["target_hour"], 0, 0, tzinfo=UTC)
     assert anticipated < target_time, (
         f"Preheating should start before target time "
         f"(anticipated: {anticipated}, target: {target_time})"
@@ -677,7 +667,7 @@ def next_event_anticipated_correctly(ihp_switch_context, hour):
     anticipated = ihp_switch_context.get("anticipated_start_time")
     if anticipated:
         # Should be before the target time
-        target_time = datetime(2025, 2, 10, hour, 0, 0, tzinfo=timezone.utc)
+        target_time = datetime(2025, 2, 10, hour, 0, 0, tzinfo=UTC)
         assert anticipated < target_time
 
 
@@ -705,8 +695,8 @@ def no_preheating_after_restart(ihp_switch_context, mock_adapters_ihp_switch):
     reloaded_service = ihp_switch_context.get("reloaded_service")
     if reloaded_service:
         # Setup a test calculation scenario
-        current_time = datetime(2025, 2, 10, 5, 0, 0, tzinfo=timezone.utc)
-        target_time = datetime(2025, 2, 10, 7, 0, 0, tzinfo=timezone.utc)
+        current_time = datetime(2025, 2, 10, 5, 0, 0, tzinfo=UTC)
+        target_time = datetime(2025, 2, 10, 7, 0, 0, tzinfo=UTC)
 
         timeslot = ScheduledTimeslot(
             target_time=target_time,
