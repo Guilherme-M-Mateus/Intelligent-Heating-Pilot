@@ -19,7 +19,7 @@ if TYPE_CHECKING:
         IClimateDataReader,
         IEnvironmentReader,
         ILhsStorage,
-        ISchedulerReader,
+        ITimeslotReader,
     )
     from ...domain.services import DeadTimeCalculationService, PredictionService
     from ..heating_cycle_lifecycle_manager import HeatingCycleLifecycleManager
@@ -42,7 +42,7 @@ class CalculateAnticipationUseCase:
 
     def __init__(
         self,
-        scheduler_reader: ISchedulerReader | None,
+        scheduler_reader: ITimeslotReader | None,
         environment_reader: IEnvironmentReader,
         climate_data_reader: IClimateDataReader,
         heating_cycle_manager: HeatingCycleLifecycleManager,
@@ -294,9 +294,7 @@ class CalculateAnticipationUseCase:
             try:
                 stored = await self._lhs_storage.get_learned_dead_time()
                 if stored is not None and stored > 0:
-                    _LOGGER.debug(
-                        "Using persisted learned dead_time: %.1f minutes", stored
-                    )
+                    _LOGGER.debug("Using persisted learned dead_time: %.1f minutes", stored)
                     return stored
                 if stored is not None and stored <= 0:
                     _LOGGER.debug(

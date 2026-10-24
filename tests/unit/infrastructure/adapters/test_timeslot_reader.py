@@ -605,9 +605,7 @@ def test_get_native_schedule_temperature_climate_reader_returns_none(mock_hass: 
     """Test that _get_native_schedule_temperature returns 20.0°C when climate reader returns None."""
     mock_climate_reader = Mock()
     mock_climate_reader.get_current_target_temperature.return_value = None
-    reader = HASchedulerReader(
-        mock_hass, ["schedule.test"], climate_reader=mock_climate_reader
-    )
+    reader = HASchedulerReader(mock_hass, ["schedule.test"], climate_reader=mock_climate_reader)
 
     result = reader._get_native_schedule_temperature()
 
@@ -619,9 +617,7 @@ def test_get_native_schedule_temperature_from_climate_reader(mock_hass: Mock) ->
     """Test that _get_native_schedule_temperature reads temperature from the climate reader."""
     mock_climate_reader = Mock()
     mock_climate_reader.get_current_target_temperature.return_value = 22.0
-    reader = HASchedulerReader(
-        mock_hass, ["schedule.test"], climate_reader=mock_climate_reader
-    )
+    reader = HASchedulerReader(mock_hass, ["schedule.test"], climate_reader=mock_climate_reader)
 
     result = reader._get_native_schedule_temperature()
 

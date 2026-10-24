@@ -16,7 +16,7 @@ from ...const import DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from ...domain.interfaces import ISchedulerCommander, ISchedulerReader, ITimerScheduler
+    from ...domain.interfaces import ISchedulerCommander, ITimerScheduler, ITimeslotReader
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -33,7 +33,7 @@ class ScheduleAnticipationActionUseCase:
 
     def __init__(
         self,
-        scheduler_reader: ISchedulerReader,
+        scheduler_reader: ITimeslotReader,
         scheduler_commander: ISchedulerCommander,
         timer_scheduler: ITimerScheduler,
         control_preheating_use_case,  # ControlPreheatingUseCase (avoid circular import)
@@ -171,7 +171,7 @@ class ScheduleAnticipationActionUseCase:
         now = dt_util.now()
 
         # Check if scheduler is enabled
-        if not await self._scheduler_reader.is_scheduler_enabled(scheduler_entity_id):
+        if not await self._scheduler_reader.is_timeslot_source_enabled(scheduler_entity_id):
             _LOGGER.warning(
                 "Scheduler %s is disabled. Skipping anticipation scheduling.",
                 scheduler_entity_id,
@@ -322,7 +322,7 @@ class ScheduleAnticipationActionUseCase:
         )
 
         # Verify scheduler is still enabled
-        if not await self._scheduler_reader.is_scheduler_enabled(scheduler_entity_id):
+        if not await self._scheduler_reader.is_timeslot_source_enabled(scheduler_entity_id):
             _LOGGER.warning("Scheduler %s is disabled, cannot trigger action", scheduler_entity_id)
             await self._clear_state()
             return

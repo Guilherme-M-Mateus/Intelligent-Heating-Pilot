@@ -40,8 +40,8 @@ from .infrastructure.adapters import (
     HAHeatingCycleStorage,
     HALhsStorage,
     HASchedulerCommander,
-    HASchedulerReader,
     HATimerScheduler,
+    HATimeslotReader,
 )
 from .infrastructure.event_bridge import HAEventBridge
 
@@ -111,7 +111,7 @@ class HeatingApplication:
         # Infrastructure adapters
         self._lhs_storage: HALhsStorage | None = None
         self._cycle_storage: HAHeatingCycleStorage | None = None
-        self._scheduler_reader: HASchedulerReader | None = None
+        self._scheduler_reader: HATimeslotReader | None = None
         self._scheduler_commander: HASchedulerCommander | None = None
         self._climate_commander: HAClimateCommander | None = None
         self._environment_reader: HAEnvironmentReader | None = None
@@ -158,11 +158,12 @@ class HeatingApplication:
             self.hass, get_recorder_queue(self.hass), self._vtherm_id
         )
 
-        self._scheduler_reader = HASchedulerReader(
+        self._scheduler_reader = HATimeslotReader(
             self.hass,
             self._scheduler_ids,
             vtherm_entity_id=self._vtherm_id,
             climate_reader=self._climate_data_reader,
+            datetime_entity_ids=device_config.datetime_entities,
         )
 
         self._scheduler_commander = HASchedulerCommander(self.hass)

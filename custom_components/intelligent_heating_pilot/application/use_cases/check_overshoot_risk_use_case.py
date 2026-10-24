@@ -13,7 +13,7 @@ if TYPE_CHECKING:
     from ...domain.interfaces import (
         IClimateDataReader,
         IEnvironmentReader,
-        ISchedulerReader,
+        ITimeslotReader,
     )
     from .control_preheating_use_case import ControlPreheatingUseCase
 
@@ -31,7 +31,7 @@ class CheckOvershootRiskUseCase:
 
     def __init__(
         self,
-        scheduler_reader: ISchedulerReader,
+        scheduler_reader: ITimeslotReader,
         environment_reader: IEnvironmentReader,
         climate_data_reader: IClimateDataReader,
         control_preheating: ControlPreheatingUseCase,

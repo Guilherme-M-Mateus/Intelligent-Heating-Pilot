@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from ..interfaces import ISchedulerReader
+from ..interfaces import ITimeslotReader
 from ..interfaces.decision_strategy_interface import IDecisionStrategy
 from ..value_objects import (
     EnvironmentState,
@@ -38,7 +38,7 @@ class MLDecisionStrategy(IDecisionStrategy):
 
     def __init__(
         self,
-        scheduler_reader: ISchedulerReader,
+        scheduler_reader: ITimeslotReader,
         # ml_client: IMLClient,  # TODO: Add interface for ML API
     ) -> None:
         """Initialize ML decision strategy.
