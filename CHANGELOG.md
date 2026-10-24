@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Integration icon in Home Assistant 2026.3+** – Brand images are now shipped in the integration's `brand/` folder, where Home Assistant 2026.3 and later loads the icon of custom integrations (contributed by frenck).
+
 ### Changed
 - **Migration from agent workflow to speckit workflow** – Agents now follow the speckit workflow for feature development, replacing the legacy role-based agent workflow
 - **CI/CD Workflow fixes** – Fixed code quality workflow to properly handle exit codes from linting and test tools
