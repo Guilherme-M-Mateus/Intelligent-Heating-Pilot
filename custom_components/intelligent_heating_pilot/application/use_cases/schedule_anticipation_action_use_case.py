@@ -206,12 +206,7 @@ class ScheduleAnticipationActionUseCase:
 
                 # Delegate cancellation to ControlPreheatingUseCase
                 await self._control_preheating.cancel_preheating(scheduler_entity_id)
-
-            # If target time reached, mark complete
-            if now >= target_time:
-                _LOGGER.info("Target time reached, preheating complete")
-                await self._clear_state()
-                return
+            # An elapsed preheat was already completed by _complete_elapsed_preheating()
 
         # Update tracking
         self._last_scheduled_time = anticipated_start
