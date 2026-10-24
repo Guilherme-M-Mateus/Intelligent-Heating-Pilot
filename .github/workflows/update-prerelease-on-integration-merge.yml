@@ -74,7 +74,7 @@ jobs:
       - name: Build release notes
         id: notes
         run: |
-          CHANGELOG_CONTENT=$(awk '/## \[Unreleased\]/{flag=1;next} flag && /## \[/{flag=0} flag{print}' CHANGELOG.md | sed '/./,$!d')
+          CHANGELOG_CONTENT=$(awk '/^## \[Unreleased\]$/{flag=1;next} flag && /^## \[/{flag=0} flag{print}' CHANGELOG.md | sed '/./,$!d')
 
           if [ -z "$CHANGELOG_CONTENT" ]; then
             echo "skip=true" >> $GITHUB_OUTPUT

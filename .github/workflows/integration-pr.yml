@@ -61,7 +61,7 @@ jobs:
       - name: Check CHANGELOG has unreleased content
         id: changelog-check
         run: |
-          UNRELEASED=$(awk '/## \[Unreleased\]/{flag=1; next} /^## \[[0-9]/{flag=0} flag' CHANGELOG.md | grep -v '^[[:space:]]*$' | wc -l)
+          UNRELEASED=$(awk '/^## \[Unreleased\]$/{flag=1; next} /^## \[[0-9]/{flag=0} flag' CHANGELOG.md | grep -v '^[[:space:]]*$' | wc -l)
 
           if [ "$UNRELEASED" -eq "0" ]; then
             echo "has_content=false" >> $GITHUB_OUTPUT
