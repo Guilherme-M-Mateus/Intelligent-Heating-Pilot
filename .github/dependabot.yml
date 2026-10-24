@@ -18,6 +18,14 @@ updates:
     labels:
       - "dependencies"
       - "automated"
+    # Blocked by the homeassistant pins; revisit when bumping homeassistant
+    ignore:
+      # aiodns==3.5.0 (pinned by HA) is incompatible with pycares 5
+      - dependency-name: "pycares"
+        versions: [">=5"]
+      # mypy 2 forces a downgrade of homeassistant and its test plugin
+      - dependency-name: "mypy"
+        versions: [">=2"]
     # Grouper les mises à jour mineures ensemble
     groups:
       minor-updates:
