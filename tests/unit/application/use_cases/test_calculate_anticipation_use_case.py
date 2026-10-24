@@ -6,7 +6,7 @@ using domain dependencies (scheduler_reader, environment_reader, etc.).
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -51,7 +51,7 @@ class TestCalculateAnticipationUseCase:
                 outdoor_temp=5.0,
                 indoor_humidity=60.0,
                 cloud_coverage=50.0,
-                timestamp=datetime(2025, 2, 10, 6, 0, 0, tzinfo=timezone.utc),
+                timestamp=datetime(2025, 2, 10, 6, 0, 0, tzinfo=UTC),
             )
         )
         return reader
@@ -86,7 +86,7 @@ class TestCalculateAnticipationUseCase:
         svc = Mock(spec=PredictionService)
         svc.predict_heating_time = Mock(
             return_value=PredictionResult(
-                anticipated_start_time=datetime(2025, 2, 10, 9, 0, 0, tzinfo=timezone.utc),
+                anticipated_start_time=datetime(2025, 2, 10, 9, 0, 0, tzinfo=UTC),
                 estimated_duration_minutes=60.0,
                 confidence_level=0.8,
                 learned_heating_slope=2.0,
@@ -133,7 +133,7 @@ class TestCalculateAnticipationUseCase:
         mock_prediction_service: Mock,
     ) -> None:
         """Test that valid timeslot produces anticipation data with prediction."""
-        target_time = datetime(2025, 2, 10, 10, 0, 0, tzinfo=timezone.utc)
+        target_time = datetime(2025, 2, 10, 10, 0, 0, tzinfo=UTC)
         mock_scheduler_reader.get_next_timeslot.return_value = ScheduledTimeslot(
             target_time=target_time,
             target_temp=21.0,
@@ -197,7 +197,7 @@ class TestCalculateAnticipationUseCase:
         mock_prediction_service: Mock,
     ) -> None:
         """Test that providing target_time without target_temp returns empty data."""
-        target_time = datetime(2025, 2, 10, 10, 0, 0, tzinfo=timezone.utc)
+        target_time = datetime(2025, 2, 10, 10, 0, 0, tzinfo=UTC)
 
         result = await use_case.calculate_anticipation_datas(
             target_time=target_time,
@@ -215,7 +215,7 @@ class TestCalculateAnticipationUseCase:
         mock_prediction_service: Mock,
     ) -> None:
         """Test that providing target_time and target_temp bypasses scheduler reader."""
-        target_time = datetime(2025, 2, 10, 10, 0, 0, tzinfo=timezone.utc)
+        target_time = datetime(2025, 2, 10, 10, 0, 0, tzinfo=UTC)
 
         result = await use_case.calculate_anticipation_datas(
             target_time=target_time,
@@ -243,7 +243,7 @@ class TestCalculateAnticipationUseCaseDeadTimeHydration:
     def mock_scheduler_reader(self) -> Mock:
         """Create mock scheduler reader that returns a valid timeslot."""
         reader = Mock()
-        target_time = datetime(2025, 2, 10, 10, 0, 0, tzinfo=timezone.utc)
+        target_time = datetime(2025, 2, 10, 10, 0, 0, tzinfo=UTC)
         reader.get_next_timeslot = AsyncMock(
             return_value=ScheduledTimeslot(
                 target_time=target_time,
@@ -263,7 +263,7 @@ class TestCalculateAnticipationUseCaseDeadTimeHydration:
                 outdoor_temp=5.0,
                 indoor_humidity=60.0,
                 cloud_coverage=50.0,
-                timestamp=datetime(2025, 2, 10, 6, 0, 0, tzinfo=timezone.utc),
+                timestamp=datetime(2025, 2, 10, 6, 0, 0, tzinfo=UTC),
             )
         )
         return reader
@@ -293,7 +293,7 @@ class TestCalculateAnticipationUseCaseDeadTimeHydration:
         svc = Mock(spec=PredictionService)
         svc.predict_heating_time = Mock(
             return_value=PredictionResult(
-                anticipated_start_time=datetime(2025, 2, 10, 9, 0, 0, tzinfo=timezone.utc),
+                anticipated_start_time=datetime(2025, 2, 10, 9, 0, 0, tzinfo=UTC),
                 estimated_duration_minutes=60.0,
                 confidence_level=0.8,
                 learned_heating_slope=2.0,
@@ -480,7 +480,7 @@ class TestCalculateAnticipationUseCaseDeadTimeHydration:
             HeatingCycle,
         )
 
-        base = datetime(2025, 2, 9, 8, 0, 0, tzinfo=timezone.utc)
+        base = datetime(2025, 2, 9, 8, 0, 0, tzinfo=UTC)
         cycle = HeatingCycle(
             device_id="climate.test",
             start_time=base,

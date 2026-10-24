@@ -9,7 +9,7 @@ BaseHAStorageAdapter class is implemented.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -254,7 +254,7 @@ class TestBaseHAStorageAdapterParseDatetime:
             result = storage._parse_datetime("2025-12-18T14:30:00+00:00")
 
             # Assert: Correct datetime object
-            assert result == datetime(2025, 12, 18, 14, 30, 0, tzinfo=timezone.utc)
+            assert result == datetime(2025, 12, 18, 14, 30, 0, tzinfo=UTC)
 
     def test_parse_datetime_adds_utc_to_naive_datetime(
         self, mock_hass: Mock, entry_id: str
@@ -269,8 +269,8 @@ class TestBaseHAStorageAdapterParseDatetime:
             result = storage._parse_datetime("2025-12-18T14:30:00")
 
             # Assert: UTC timezone added
-            assert result.tzinfo == timezone.utc
-            assert result == datetime(2025, 12, 18, 14, 30, 0, tzinfo=timezone.utc)
+            assert result.tzinfo == UTC
+            assert result == datetime(2025, 12, 18, 14, 30, 0, tzinfo=UTC)
 
     def test_parse_datetime_with_empty_string_raises_valueerror(
         self, mock_hass: Mock, entry_id: str
@@ -310,7 +310,7 @@ class TestBaseHAStorageAdapterSerializeDatetime:
             storage = ConcreteHAStorage(mock_hass, entry_id)
 
             # Act: Serialize datetime
-            dt = datetime(2025, 12, 18, 14, 30, 0, tzinfo=timezone.utc)
+            dt = datetime(2025, 12, 18, 14, 30, 0, tzinfo=UTC)
             result = storage._serialize_datetime(dt)
 
             # Assert: ISO format string
@@ -324,7 +324,7 @@ class TestBaseHAStorageAdapterSerializeDatetime:
             storage = ConcreteHAStorage(mock_hass, entry_id)
 
             # Act: Serialize datetime with timezone
-            dt = datetime(2025, 12, 18, 14, 30, 0, tzinfo=timezone.utc)
+            dt = datetime(2025, 12, 18, 14, 30, 0, tzinfo=UTC)
             result = storage._serialize_datetime(dt)
 
             # Assert: Timezone preserved

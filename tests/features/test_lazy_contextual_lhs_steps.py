@@ -5,7 +5,7 @@ Implements BDD steps for testing lazy population of contextual LHS cache.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -72,7 +72,7 @@ def lhs_lifecycle_manager_configured(lhs_context):
 @given("heating cycles are available for calculation")
 def heating_cycles_available(lhs_context, device_id):
     """GIVEN: Create heating cycles for LHS calculation."""
-    base_time = datetime(2025, 2, 10, 12, 0, 0, tzinfo=timezone.utc)
+    base_time = datetime(2025, 2, 10, 12, 0, 0, tzinfo=UTC)
     cycles = [create_test_heating_cycle(device_id, base_time)]
     lhs_context["cycles"] = cycles
 

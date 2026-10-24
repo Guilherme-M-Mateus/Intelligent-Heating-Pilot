@@ -6,7 +6,7 @@ and delegates to them without changing behavior.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, Mock
 
 import pytest
@@ -101,7 +101,7 @@ class TestHeatingOrchestrator:
         mock_calculate_anticipation: Mock,
     ) -> None:
         """Test that calculate_anticipation_only delegates to use case."""
-        target_time = datetime(2025, 2, 10, 10, 0, 0, tzinfo=timezone.utc)
+        target_time = datetime(2025, 2, 10, 10, 0, 0, tzinfo=UTC)
 
         await orchestrator.calculate_anticipation_only(
             target_time=target_time,
@@ -121,8 +121,8 @@ class TestHeatingOrchestrator:
     ) -> None:
         """Test that calculate_anticipation_only returns use case result."""
         expected_data = {
-            "anticipated_start_time": datetime(2025, 2, 10, 10, 0, 0, tzinfo=timezone.utc),
-            "next_schedule_time": datetime(2025, 2, 10, 11, 0, 0, tzinfo=timezone.utc),
+            "anticipated_start_time": datetime(2025, 2, 10, 10, 0, 0, tzinfo=UTC),
+            "next_schedule_time": datetime(2025, 2, 10, 11, 0, 0, tzinfo=UTC),
             "anticipation_minutes": 60,
         }
         mock_calculate_anticipation.calculate_anticipation_datas.return_value = expected_data

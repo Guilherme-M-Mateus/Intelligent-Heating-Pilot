@@ -10,7 +10,7 @@ These tests would have caught both bugs and prevent regression.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, Mock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from homeassistant.core import HomeAssistant
@@ -23,7 +23,6 @@ from custom_components.intelligent_heating_pilot.const import (
     CONF_VTHERM_ENTITY,
     DOMAIN,
 )
-
 
 # ---------------------------------------------------------------------------
 # Shared fixtures
@@ -141,9 +140,9 @@ class TestResetLearningTypeErrorRegression:
         # Verify reset_all_learning_data was called WITH a device_id argument
         mock_orchestrator.reset_all_learning_data.assert_awaited_once()
         call_kwargs = mock_orchestrator.reset_all_learning_data.call_args
-        assert "device_id" in (call_kwargs.kwargs or {}), (
-            "reset_all_learning_data must receive device_id keyword argument"
-        )
+        assert "device_id" in (
+            call_kwargs.kwargs or {}
+        ), "reset_all_learning_data must receive device_id keyword argument"
         assert call_kwargs.kwargs["device_id"] == "entry_device_a"
 
 

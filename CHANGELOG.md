@@ -16,12 +16,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Feature/fix PRs now fail immediately when the `[Unreleased]` section of CHANGELOG.md has not been updated (two-pass diff against `origin/integration`)
   - Integration → main PRs are blocked when the source branch is not `integration` or when no validated RC pre-release (`vX.Y.Z-rcN`) exists for the current version
   - The release promotion workflow now fails fast when no matching RC pre-release is found before attempting to create a final release
+- **Development dependency updates** – Consolidated the pending Dependabot updates: pytest-bdd 8.1, pre-commit 4.7, ruff 0.17, bandit 1.9.4, pip 26.2, setuptools 84.2 and `actions/setup-python` v7. mypy stays on 1.x because mypy 2 forces a Home Assistant downgrade.
 
 ### Fixed
+- **Broken test environment** – Restored the `pycares<5` pin. pycares 5 is incompatible with the `aiodns` version required by Home Assistant and prevented the test suite from starting.
 - **Reset Learning Service** – Fixed the `intelligent_heating_pilot.reset_learning` service which was crashing with a `TypeError` when triggered from Developer Tools or automations. The service now also accepts an `entity_id` parameter so users with multiple IHP devices can choose which device's learning data to reset, consistent with the `calculate_anticipated_start_time` service.
 - **Integration PR CHANGELOG check** – Fixed the `awk` range pattern in `integration-pr.yml` that caused the `[Unreleased]` section extraction to terminate immediately because `## [Unreleased]` matched both the start and end selectors. Now uses a flag-based approach with `^## \[[0-9]` as the end guard.
 - **Integration PR RC detection** – Fixed the RC pre-release check to find any RC newer than the current main release, rather than filtering by the version in `manifest.json`. This correctly handles the case where the RC is tagged with the *next* version (e.g. `v0.6.3-rc2`) while `manifest.json` on `integration` still reports the *current* version (`0.6.2`). Updated `scripts/test-rc-check.sh` with five scenarios covering the new version-agnostic logic.
 - **Indoor temperature used as outdoor temperature** (#158) – Without an outdoor temperature sensor (which cannot be configured yet), IHP substituted the indoor temperature and applied the outdoor correction `1 + (20 - indoor) × 0.05`, lengthening every anticipation by about 10–20%. The outdoor correction is now skipped when no outdoor temperature is available. Side effect: the confidence level no longer gets the +0.05 bonus for an outdoor sensor that does not exist.
+- **Lint cleanup** – Applied ruff 0.17 fixes across the codebase (`datetime.UTC`, `TimeoutError`, `collections.abc` imports, explicit `zip(strict=True)`). No behavior change.
+- **PR checks ignoring test failures** – The Code Quality workflow no longer swallows pytest failures (the job now fails and the PR comment reports the failing tests), and the Feature/Fix PR test comment reports the real test outcome instead of always claiming success. Dependabot PRs now skip the branch-naming and CHANGELOG checks, as well as the PR comments their read-only token cannot post, while still running the tests.
 
 ## [0.6.2] - 2026-03-25
 

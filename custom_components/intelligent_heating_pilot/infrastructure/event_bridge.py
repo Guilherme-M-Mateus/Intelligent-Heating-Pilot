@@ -432,7 +432,7 @@ class HAEventBridge:
                     asyncio.gather(*self._active_tasks, return_exceptions=True),
                     timeout=5.0,  # 5-second timeout for all tasks
                 )
-            except asyncio.TimeoutError:
+            except TimeoutError:
                 _LOGGER.warning(
                     "Timeout waiting for %d tasks to shutdown; forcing cleanup",
                     len(self._active_tasks),

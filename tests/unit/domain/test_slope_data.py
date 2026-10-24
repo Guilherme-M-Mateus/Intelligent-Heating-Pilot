@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 import pytest
 
@@ -11,7 +11,7 @@ from custom_components.intelligent_heating_pilot.domain.value_objects import Slo
 
 def test_slope_data_creation() -> None:
     """Test creating valid SlopeData."""
-    timestamp = datetime.now(timezone.utc)
+    timestamp = datetime.now(UTC)
     slope_data = SlopeData(slope_value=2.5, timestamp=timestamp)
 
     assert slope_data.slope_value == 2.5
@@ -20,7 +20,7 @@ def test_slope_data_creation() -> None:
 
 def test_slope_data_rejects_negative_slope() -> None:
     """Test that negative slopes are rejected."""
-    timestamp = datetime.now(timezone.utc)
+    timestamp = datetime.now(UTC)
 
     with pytest.raises(ValueError, match="positive"):
         SlopeData(slope_value=-1.0, timestamp=timestamp)
@@ -28,7 +28,7 @@ def test_slope_data_rejects_negative_slope() -> None:
 
 def test_slope_data_rejects_zero_slope() -> None:
     """Test that zero slopes are rejected."""
-    timestamp = datetime.now(timezone.utc)
+    timestamp = datetime.now(UTC)
 
     with pytest.raises(ValueError, match="positive"):
         SlopeData(slope_value=0.0, timestamp=timestamp)
@@ -44,7 +44,7 @@ def test_slope_data_rejects_naive_timestamp() -> None:
 
 def test_slope_data_equality() -> None:
     """Test that SlopeData equality works correctly."""
-    timestamp = datetime.now(timezone.utc)
+    timestamp = datetime.now(UTC)
     slope_data1 = SlopeData(slope_value=2.5, timestamp=timestamp)
     slope_data2 = SlopeData(slope_value=2.5, timestamp=timestamp)
 
@@ -53,8 +53,8 @@ def test_slope_data_equality() -> None:
 
 def test_slope_data_inequality_different_timestamp() -> None:
     """Test that SlopeData with different timestamps are not equal."""
-    timestamp1 = datetime.now(timezone.utc)
-    timestamp2 = datetime(2024, 1, 1, tzinfo=timezone.utc)
+    timestamp1 = datetime.now(UTC)
+    timestamp2 = datetime(2024, 1, 1, tzinfo=UTC)
 
     slope_data1 = SlopeData(slope_value=2.5, timestamp=timestamp1)
     slope_data2 = SlopeData(slope_value=2.5, timestamp=timestamp2)
@@ -64,7 +64,7 @@ def test_slope_data_inequality_different_timestamp() -> None:
 
 def test_slope_data_inequality_different_value() -> None:
     """Test that SlopeData with different values are not equal."""
-    timestamp = datetime.now(timezone.utc)
+    timestamp = datetime.now(UTC)
 
     slope_data1 = SlopeData(slope_value=2.5, timestamp=timestamp)
     slope_data2 = SlopeData(slope_value=3.0, timestamp=timestamp)

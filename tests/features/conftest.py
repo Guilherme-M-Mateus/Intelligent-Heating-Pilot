@@ -12,7 +12,7 @@ The enable_event_loop_debug compatibility fix lives in the root conftest.py.
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -58,7 +58,7 @@ def _bdd_event_loop_restore():
 @pytest.fixture
 def base_datetime() -> datetime:
     """Base datetime for BDD scenarios."""
-    return datetime(2025, 2, 10, 12, 0, 0, tzinfo=timezone.utc)
+    return datetime(2025, 2, 10, 12, 0, 0, tzinfo=UTC)
 
 
 @pytest.fixture

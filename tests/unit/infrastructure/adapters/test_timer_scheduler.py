@@ -15,7 +15,7 @@ Coverage targets:
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -60,7 +60,7 @@ class TestHATimerSchedulerBasicScheduling:
         """
         # Arrange
         scheduler = HATimerScheduler(mock_hass)
-        target_time = datetime(2025, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
+        target_time = datetime(2025, 1, 15, 10, 0, 0, tzinfo=UTC)
         callback_func = AsyncMock()
         mock_cancel = Mock()
 
@@ -82,7 +82,7 @@ class TestHATimerSchedulerBasicScheduling:
         """Test that schedule_timer returns a cancel function."""
         # Arrange
         scheduler = HATimerScheduler(mock_hass)
-        target_time = datetime(2025, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
+        target_time = datetime(2025, 1, 15, 10, 0, 0, tzinfo=UTC)
         callback_func = AsyncMock()
         mock_cancel = Mock()
 
@@ -105,7 +105,7 @@ class TestHATimerSchedulerBasicScheduling:
         """
         # Arrange
         scheduler = HATimerScheduler(mock_hass)
-        target_time = datetime(2025, 1, 15, 10, 30, 0, tzinfo=timezone.utc)
+        target_time = datetime(2025, 1, 15, 10, 30, 0, tzinfo=UTC)
         callback_func = AsyncMock()
 
         with patch(
@@ -131,7 +131,7 @@ class TestHATimerSchedulerCallbackExecution:
         """
         # Arrange
         scheduler = HATimerScheduler(mock_hass)
-        target_time = datetime(2025, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
+        target_time = datetime(2025, 1, 15, 10, 0, 0, tzinfo=UTC)
         callback_func = AsyncMock()
         captured_callback = None
 
@@ -162,7 +162,7 @@ class TestHATimerSchedulerCallbackExecution:
         """Test that the callback's coroutine is passed to async_create_task."""
         # Arrange
         scheduler = HATimerScheduler(mock_hass)
-        target_time = datetime(2025, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
+        target_time = datetime(2025, 1, 15, 10, 0, 0, tzinfo=UTC)
         callback_func = AsyncMock()
         captured_callback = None
 
@@ -196,7 +196,7 @@ class TestHATimerSchedulerCancellation:
         """Test that calling the cancel function prevents callback execution."""
         # Arrange
         scheduler = HATimerScheduler(mock_hass)
-        target_time = datetime(2025, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
+        target_time = datetime(2025, 1, 15, 10, 0, 0, tzinfo=UTC)
         callback_func = AsyncMock()
         mock_cancel = Mock()
 
@@ -216,7 +216,7 @@ class TestHATimerSchedulerCancellation:
         """Test that multiple cancellations don't cause errors."""
         # Arrange
         scheduler = HATimerScheduler(mock_hass)
-        target_time = datetime(2025, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
+        target_time = datetime(2025, 1, 15, 10, 0, 0, tzinfo=UTC)
         callback_func = AsyncMock()
         mock_cancel = Mock()
 
@@ -241,9 +241,9 @@ class TestHATimerSchedulerConcurrentTimers:
         """Test that multiple timers can be scheduled at the same time."""
         # Arrange
         scheduler = HATimerScheduler(mock_hass)
-        target_time1 = datetime(2025, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
-        target_time2 = datetime(2025, 1, 15, 11, 0, 0, tzinfo=timezone.utc)
-        target_time3 = datetime(2025, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
+        target_time1 = datetime(2025, 1, 15, 10, 0, 0, tzinfo=UTC)
+        target_time2 = datetime(2025, 1, 15, 11, 0, 0, tzinfo=UTC)
+        target_time3 = datetime(2025, 1, 15, 12, 0, 0, tzinfo=UTC)
         callback1 = AsyncMock()
         callback2 = AsyncMock()
         callback3 = AsyncMock()
@@ -272,8 +272,8 @@ class TestHATimerSchedulerConcurrentTimers:
         """Test that canceling one timer doesn't affect other scheduled timers."""
         # Arrange
         scheduler = HATimerScheduler(mock_hass)
-        target_time1 = datetime(2025, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
-        target_time2 = datetime(2025, 1, 15, 11, 0, 0, tzinfo=timezone.utc)
+        target_time1 = datetime(2025, 1, 15, 10, 0, 0, tzinfo=UTC)
+        target_time2 = datetime(2025, 1, 15, 11, 0, 0, tzinfo=UTC)
         callback1 = AsyncMock()
         callback2 = AsyncMock()
         mock_cancel1 = Mock()
@@ -300,7 +300,7 @@ class TestHATimerSchedulerConcurrentTimers:
         """
         # Arrange
         scheduler = HATimerScheduler(mock_hass)
-        base_time = datetime(2025, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
+        base_time = datetime(2025, 1, 15, 10, 0, 0, tzinfo=UTC)
         callbacks = [AsyncMock() for _ in range(10)]
         target_times = [base_time + timedelta(minutes=i * 15) for i in range(10)]
 
@@ -311,7 +311,7 @@ class TestHATimerSchedulerConcurrentTimers:
             # Act
             cancel_funcs = [
                 scheduler.schedule_timer(time, callback)
-                for time, callback in zip(target_times, callbacks)
+                for time, callback in zip(target_times, callbacks, strict=True)
             ]
 
             # Assert
@@ -332,7 +332,7 @@ class TestHATimerSchedulerEdgeCases:
         """
         # Arrange
         scheduler = HATimerScheduler(mock_hass)
-        past_time = datetime(2020, 1, 1, 0, 0, 0, tzinfo=timezone.utc)
+        past_time = datetime(2020, 1, 1, 0, 0, 0, tzinfo=UTC)
         callback_func = AsyncMock()
 
         with patch(
@@ -351,7 +351,7 @@ class TestHATimerSchedulerEdgeCases:
         """Test scheduling timers with different timezone-aware datetimes."""
         # Arrange
         scheduler = HATimerScheduler(mock_hass)
-        utc_time = datetime(2025, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
+        utc_time = datetime(2025, 1, 15, 10, 0, 0, tzinfo=UTC)
         callback_func = AsyncMock()
 
         with patch(
@@ -372,7 +372,7 @@ class TestHATimerSchedulerEdgeCases:
         """
         # Arrange
         scheduler = HATimerScheduler(mock_hass)
-        far_future = datetime(2025, 1, 20, 10, 0, 0, tzinfo=timezone.utc)  # 5 days ahead
+        far_future = datetime(2025, 1, 20, 10, 0, 0, tzinfo=UTC)  # 5 days ahead
         callback_func = AsyncMock()
 
         with patch(
@@ -391,7 +391,7 @@ class TestHATimerSchedulerEdgeCases:
         """Test timer scheduled with 1-second precision."""
         # Arrange
         scheduler = HATimerScheduler(mock_hass)
-        precise_time = datetime(2025, 1, 15, 10, 30, 45, tzinfo=timezone.utc)
+        precise_time = datetime(2025, 1, 15, 10, 30, 45, tzinfo=UTC)
         callback_func = AsyncMock()
 
         with patch(
@@ -414,8 +414,8 @@ class TestHATimerSchedulerReschedule:
         """Test that rescheduling cancels previous timer and creates new one."""
         # Arrange
         scheduler = HATimerScheduler(mock_hass)
-        time1 = datetime(2025, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
-        time2 = datetime(2025, 1, 15, 11, 0, 0, tzinfo=timezone.utc)
+        time1 = datetime(2025, 1, 15, 10, 0, 0, tzinfo=UTC)
+        time2 = datetime(2025, 1, 15, 11, 0, 0, tzinfo=UTC)
         callback_func = AsyncMock()
         mock_cancel1 = Mock()
         mock_cancel2 = Mock()
@@ -439,7 +439,7 @@ class TestHATimerSchedulerReschedule:
         """Test multiple consecutive reschedules (>5 times)."""
         # Arrange
         scheduler = HATimerScheduler(mock_hass)
-        base_time = datetime(2025, 1, 15, 10, 0, 0, tzinfo=timezone.utc)
+        base_time = datetime(2025, 1, 15, 10, 0, 0, tzinfo=UTC)
         callback_func = AsyncMock()
         cancel_funcs = []
 
@@ -467,7 +467,7 @@ class TestHATimerSchedulerLongDuration:
         """Test scheduling a timer 2 hours in advance."""
         # Arrange
         scheduler = HATimerScheduler(mock_hass)
-        now = datetime(2025, 1, 15, 8, 0, 0, tzinfo=timezone.utc)
+        now = datetime(2025, 1, 15, 8, 0, 0, tzinfo=UTC)
         target_time = now + timedelta(hours=2)
         callback_func = AsyncMock()
 
@@ -488,7 +488,7 @@ class TestHATimerSchedulerLongDuration:
         """Test scheduling a timer 6 hours in advance (max LHS window)."""
         # Arrange
         scheduler = HATimerScheduler(mock_hass)
-        now = datetime(2025, 1, 15, 8, 0, 0, tzinfo=timezone.utc)
+        now = datetime(2025, 1, 15, 8, 0, 0, tzinfo=UTC)
         target_time = now + timedelta(hours=6)
         callback_func = AsyncMock()
 
@@ -509,7 +509,7 @@ class TestHATimerSchedulerLongDuration:
         """Test scheduling a timer 24 hours in advance (overnight scenario)."""
         # Arrange
         scheduler = HATimerScheduler(mock_hass)
-        now = datetime(2025, 1, 15, 8, 0, 0, tzinfo=timezone.utc)
+        now = datetime(2025, 1, 15, 8, 0, 0, tzinfo=UTC)
         target_time = now + timedelta(hours=24)
         callback_func = AsyncMock()
 
