@@ -82,7 +82,7 @@ jobs:
         id: changelog
         run: |
           # Extraction de la section Unreleased (entre ## [Unreleased] et la prochaine section ##)
-          CHANGELOG_CONTENT=$(awk '/## \[Unreleased\]/{flag=1;next}/^## \[/{flag=0}flag' CHANGELOG.md)
+          CHANGELOG_CONTENT=$(awk '/^## \[Unreleased\]$/{flag=1;next}/^## \[/{flag=0}flag' CHANGELOG.md)
 
           # Supprimer les lignes vides au début et à la fin
           CHANGELOG_CONTENT=$(echo "$CHANGELOG_CONTENT" | sed '/./,$!d' | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}')

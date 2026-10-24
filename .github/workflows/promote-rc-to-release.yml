@@ -63,7 +63,7 @@ jobs:
         run: |
           VERSION="${{ steps.version.outputs.version }}"
 
-          CHANGELOG_CONTENT=$(awk '/## \[Unreleased\]/{flag=1;next} flag && /## \[/{flag=0} flag{print}' CHANGELOG.md)
+          CHANGELOG_CONTENT=$(awk '/^## \[Unreleased\]$/{flag=1;next} flag && /^## \[/{flag=0} flag{print}' CHANGELOG.md)
           if [ -z "$CHANGELOG_CONTENT" ]; then
             echo "❌ Aucune entrée Unreleased dans CHANGELOG.md"
             exit 1
@@ -120,7 +120,7 @@ jobs:
           if grep -qF "## [$VERSION]" CHANGELOG.md; then
             echo "ℹ️ CHANGELOG already contains ## [$VERSION] — skipping sed substitution"
           else
-            sed -i "s/## \[Unreleased\]/## [Unreleased]\n\n## [$VERSION] - $TODAY/" CHANGELOG.md
+            sed -i "s/^## \[Unreleased\]$/## [Unreleased]\n\n## [$VERSION] - $TODAY/" CHANGELOG.md
           fi
 
           git add CHANGELOG.md

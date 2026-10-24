@@ -150,7 +150,7 @@ print_header "7. CHANGELOG"
 if [ -f "CHANGELOG.md" ]; then
     check_ok "CHANGELOG.md existe"
 
-    if grep -q "## \[Unreleased\]" CHANGELOG.md; then
+    if grep -q "^## \[Unreleased\]$" CHANGELOG.md; then
         check_ok "Section [Unreleased] présente dans CHANGELOG"
     else
         check_warning "Section [Unreleased] manquante dans CHANGELOG"

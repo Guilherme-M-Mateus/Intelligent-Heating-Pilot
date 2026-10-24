@@ -76,12 +76,12 @@ cmd_prepare() {
     fi
 
     info "Vérification du CHANGELOG..."
-    if ! grep -q "## \[Unreleased\]" CHANGELOG.md; then
+    if ! grep -q "^## \[Unreleased\]$" CHANGELOG.md; then
         error "Section [Unreleased] manquante dans CHANGELOG.md"
     fi
 
     # Extraire les changements du CHANGELOG
-    CHANGELOG_CONTENT=$(awk '/## \[Unreleased\]/,/## \[/' CHANGELOG.md | sed '1d;$d')
+    CHANGELOG_CONTENT=$(awk '/^## \[Unreleased\]$/{flag=1;next} /^## \[/{flag=0} flag' CHANGELOG.md | sed '/./,$!d')
     if [ -z "$CHANGELOG_CONTENT" ]; then
         error "Aucun changement dans la section [Unreleased] du CHANGELOG.md"
     fi

@@ -11,6 +11,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Integration icon in Home Assistant 2026.3+** – Brand images are now shipped in the integration's `brand/` folder, where Home Assistant 2026.3 and later loads the icon of custom integrations (contributed by frenck).
 
 ### Changed
+- **Development dependency updates** – Consolidated the pending Dependabot updates: pytest-bdd 8.1, pre-commit 4.7, ruff 0.17, bandit 1.9.4, pip 26.2, setuptools 84.2 and `actions/setup-python` v7. mypy stays on 1.x because mypy 2 forces a Home Assistant downgrade.
+- **Security dependency updates** – `idna` 3.20 and `urllib3` 2.8.0 (development environment only).
+
+### Fixed
+- **Next timeslot not anticipated after a preheat** (#156) – The "preheating active" flag was only cleared when compared against the *next* timeslot, so a completed preheat could block anticipation of the following slot. A preheat is now marked complete as soon as its own target time has passed, without sending any command to the scheduler.
+- **Anticipation timer surviving unload/reload** (#156) – Changing options or unloading the integration left the pending anticipation timer registered in Home Assistant, which could trigger the scheduler for a removed instance. The timer is now cancelled during cleanup (the thermostat setpoint is left untouched).
+- **Indoor temperature used as outdoor temperature** (#158) – Without an outdoor temperature sensor (which cannot be configured yet), IHP substituted the indoor temperature and applied the outdoor correction `1 + (20 - indoor) × 0.05`, lengthening every anticipation by about 10–20%. The outdoor correction is now skipped when no outdoor temperature is available. Side effect: the confidence level no longer gets the +0.05 bonus for an outdoor sensor that does not exist.
+- **Broken test environment** – Restored the `pycares<5` pin. pycares 5 is incompatible with the `aiodns` version required by Home Assistant and prevented the test suite from starting.
+- **PR checks ignoring test failures** – The Code Quality workflow no longer swallows pytest failures (the job now fails and the PR comment reports the failing tests), and the Feature/Fix PR test comment reports the real test outcome instead of always claiming success. Dependabot PRs now skip the branch-naming and CHANGELOG checks, as well as the PR comments their read-only token cannot post, while still running the tests.
+- **PR checks failing on fork PRs** – Pull requests opened from forks get a read-only token, so the PR comment steps failed with `Resource not accessible by integration` and turned the Code Quality and Feature/Fix PR checks red even when tests passed. Comment steps are now skipped for fork PRs; the checks report the real lint/test outcome.
+- **Release workflows corrupting the CHANGELOG** – The `[Unreleased]` header pattern was not anchored to the start of the line, so the release promotion stamped the version inside a 0.6.3 entry that quoted the header, and release-note extraction could pick up text from older sections. All workflows and helper scripts now only match the header on its own line. The damaged 0.6.3 entry is repaired.
+- **Lint cleanup** – Applied ruff 0.17 fixes across the codebase (`datetime.UTC`, `TimeoutError`, `collections.abc` imports, explicit `zip(strict=True)`). No behavior change.
+
+## [0.6.3] - 2026-04-04
+
+### Changed
 - **Migration from agent workflow to speckit workflow** – Agents now follow the speckit workflow for feature development, replacing the legacy role-based agent workflow
 - **CI/CD Workflow fixes** – Fixed code quality workflow to properly handle exit codes from linting and test tools
   - Use `set +e`/`set -e` to safely capture exit codes from mypy, pylint and pytest
@@ -19,19 +35,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Feature/fix PRs now fail immediately when the `[Unreleased]` section of CHANGELOG.md has not been updated (two-pass diff against `origin/integration`)
   - Integration → main PRs are blocked when the source branch is not `integration` or when no validated RC pre-release (`vX.Y.Z-rcN`) exists for the current version
   - The release promotion workflow now fails fast when no matching RC pre-release is found before attempting to create a final release
-- **Development dependency updates** – Consolidated the pending Dependabot updates: pytest-bdd 8.1, pre-commit 4.7, ruff 0.17, bandit 1.9.4, pip 26.2, setuptools 84.2 and `actions/setup-python` v7. mypy stays on 1.x because mypy 2 forces a Home Assistant downgrade.
 
 ### Fixed
-- **Broken test environment** – Restored the `pycares<5` pin. pycares 5 is incompatible with the `aiodns` version required by Home Assistant and prevented the test suite from starting.
 - **Reset Learning Service** – Fixed the `intelligent_heating_pilot.reset_learning` service which was crashing with a `TypeError` when triggered from Developer Tools or automations. The service now also accepts an `entity_id` parameter so users with multiple IHP devices can choose which device's learning data to reset, consistent with the `calculate_anticipated_start_time` service.
-- **Indoor temperature used as outdoor temperature** (#158) – Without an outdoor temperature sensor (which cannot be configured yet), IHP substituted the indoor temperature and applied the outdoor correction `1 + (20 - indoor) × 0.05`, lengthening every anticipation by about 10–20%. The outdoor correction is now skipped when no outdoor temperature is available. Side effect: the confidence level no longer gets the +0.05 bonus for an outdoor sensor that does not exist.
-- **Integration PR CHANGELOG check** – Fixed the `awk` range pattern in `integration-pr.yml` that caused the `[Unreleased]` section extraction to terminate immediately because `## [Unreleased]` matched both the start and end selectors. Now uses a flag-based approach with `^## \[[0-9]` as the end guard.
-- **PR checks failing on fork PRs** – Pull requests opened from forks get a read-only token, so the PR comment steps failed with `Resource not accessible by integration` and turned the Code Quality and Feature/Fix PR checks red even when tests passed. Comment steps are now skipped for fork PRs; the checks report the real lint/test outcome.
+- **Integration PR CHANGELOG check** – Fixed the `awk` range pattern in `integration-pr.yml` that caused the `[Unreleased]` section extraction to terminate immediately because the `[Unreleased]` header matched both the start and end selectors. Now uses a flag-based approach with `^## \[[0-9]` as the end guard.
 - **Integration PR RC detection** – Fixed the RC pre-release check to find any RC newer than the current main release, rather than filtering by the version in `manifest.json`. This correctly handles the case where the RC is tagged with the *next* version (e.g. `v0.6.3-rc2`) while `manifest.json` on `integration` still reports the *current* version (`0.6.2`). Updated `scripts/test-rc-check.sh` with five scenarios covering the new version-agnostic logic.
-- **Next timeslot not anticipated after a preheat** (#156) – The "preheating active" flag was only cleared when compared against the *next* timeslot, so a completed preheat could block anticipation of the following slot. A preheat is now marked complete as soon as its own target time has passed, without sending any command to the scheduler.
-- **Anticipation timer surviving unload/reload** (#156) – Changing options or unloading the integration left the pending anticipation timer registered in Home Assistant, which could trigger the scheduler for a removed instance. The timer is now cancelled during cleanup (the thermostat setpoint is left untouched).
-- **Lint cleanup** – Applied ruff 0.17 fixes across the codebase (`datetime.UTC`, `TimeoutError`, `collections.abc` imports, explicit `zip(strict=True)`). No behavior change.
-- **PR checks ignoring test failures** – The Code Quality workflow no longer swallows pytest failures (the job now fails and the PR comment reports the failing tests), and the Feature/Fix PR test comment reports the real test outcome instead of always claiming success. Dependabot PRs now skip the branch-naming and CHANGELOG checks, as well as the PR comments their read-only token cannot post, while still running the tests.
 
 ## [0.6.2] - 2026-03-25
 
@@ -373,7 +381,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Release Links
 
-[Unreleased]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.6.3...HEAD
+[0.6.3]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/releases/tag/v0.6.3
 [0.6.0]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.4.4...v0.5.0
 [0.4.3]: https://github.com/RastaChaum/Intelligent-Heating-Pilot/compare/v0.4.2...v0.4.3

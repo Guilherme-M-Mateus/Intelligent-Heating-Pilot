@@ -22,11 +22,11 @@ run_check() {
     local base_changelog="$2"
 
     HEAD_UNRELEASED=$(printf '%s' "$head_changelog" \
-        | awk '/## \[Unreleased\]/{flag=1;next} /^## \[/{flag=0} flag{print}' \
+        | awk '/^## \[Unreleased\]$/{flag=1;next} /^## \[/{flag=0} flag{print}' \
         | grep -v '^[[:space:]]*$' || true)
 
     BASE_UNRELEASED=$(printf '%s' "$base_changelog" \
-        | awk '/## \[Unreleased\]/{flag=1;next} /^## \[/{flag=0} flag{print}' \
+        | awk '/^## \[Unreleased\]$/{flag=1;next} /^## \[/{flag=0} flag{print}' \
         | grep -v '^[[:space:]]*$' || true)
 
     NEW_LINES=$(diff <(printf '%s\n' "$BASE_UNRELEASED") <(printf '%s\n' "$HEAD_UNRELEASED") \
