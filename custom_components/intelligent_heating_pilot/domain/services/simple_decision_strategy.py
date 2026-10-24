@@ -66,7 +66,7 @@ class SimpleDecisionStrategy(IDecisionStrategy):
         _LOGGER.debug("SimpleDecisionStrategy.decide_heating_action called")
         _LOGGER.debug(
             f"Environment: indoor={environment.indoor_temperature}°C, "
-            f"outdoor={environment.outdoor_temp}°C, "
+            f"outdoor={'n/a' if environment.outdoor_temp is None else f'{environment.outdoor_temp}°C'}, "
             f"humidity={environment.indoor_humidity}%"
         )
 

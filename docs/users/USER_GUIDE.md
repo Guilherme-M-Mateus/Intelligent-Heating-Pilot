@@ -229,7 +229,7 @@ The service returns when to start heating, estimated duration, learned slope, an
 
 ### Q: What happens if I don't have outdoor temperature sensor?
 
-**A:** That's fine! IHP works without it, just uses default assumptions. Adding the sensor improves accuracy.
+**A:** That's fine! IHP works without it: the outdoor temperature adjustment is simply skipped, and the learned heating slope, computed from your recent heating cycles, already reflects recent weather. Note that an outdoor temperature sensor cannot be configured yet.
 
 ### Q: Is IHP making my heating worse?
 

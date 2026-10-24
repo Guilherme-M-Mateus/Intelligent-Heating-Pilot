@@ -230,6 +230,8 @@ Examples:
 - Outdoor temp -10°C: factor = 2.5 (heat 2.5× longer)
 ```
 
+> **Note:** This adjustment is only applied when an outdoor temperature is available. An outdoor temperature sensor cannot be configured yet, so it is currently skipped.
+
 #### 2. **Humidity Effect**
 
 Higher humidity = **Less efficient heating** = **Need to heat longer**
@@ -391,7 +393,7 @@ Scheduler State = "off"
 - Predictions **increase slightly** (start heating earlier)
 - More heat loss through walls
 
-**Why:** Environmental adjustment for outdoor temperature
+**Why:** Heating cycles learned during cold days have lower slopes, so the learned heating slope already lengthens predictions
 
 ### Scenario 4: High Humidity
 

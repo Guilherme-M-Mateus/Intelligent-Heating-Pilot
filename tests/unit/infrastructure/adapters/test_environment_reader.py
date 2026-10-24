@@ -81,10 +81,15 @@ async def test_get_current_environment_returns_none_when_current_temp_invalid(
 
 
 @pytest.mark.asyncio
-async def test_get_current_environment_uses_fallbacks_when_optional_missing(
+async def test_get_current_environment_without_outdoor_sensor_leaves_outdoor_unset(
     mock_hass: Mock,
 ) -> None:
-    """Fallback to indoor temp and default humidity when optional sensors are missing."""
+    """A missing outdoor sensor leaves outdoor_temp None; humidity defaults to 50%.
+
+    Substituting the indoor temperature for the outdoor one made the prediction
+    apply an outdoor correction of 1 + (20 - indoor) * 0.05 (10-20% longer
+    anticipation) for every installation without an outdoor sensor.
+    """
     vtherm_state = _make_state(attributes={"current_temperature": 21.5})
 
     def _get_state(entity_id: str) -> Mock | None:
@@ -115,7 +120,7 @@ async def test_get_current_environment_uses_fallbacks_when_optional_missing(
 
     assert result is not None
     assert result.indoor_temperature == 21.5
-    assert result.outdoor_temp == 21.5
+    assert result.outdoor_temp is None
     assert result.indoor_humidity == 50.0
     assert result.timestamp == fixed_now
     assert result.outdoor_humidity is None
