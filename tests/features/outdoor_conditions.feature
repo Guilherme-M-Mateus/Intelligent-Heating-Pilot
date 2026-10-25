@@ -29,6 +29,19 @@ Feature: Outdoor conditions reach the preheating prediction
     When IHP reads the current environment
     Then the outdoor temperature is unknown
 
+  Scenario: Each heating cycle records the outdoor temperature it ran in
+    Given the outdoor temperature source is "sensor.outdoor_temperature"
+    And its history reads 4.0 °C from 05:30 then 6.0 °C from 06:20
+    And the room heated from 06:10 to 06:35
+    When IHP extracts the heating cycles
+    Then the cycle records an average outdoor temperature of 5.2 °C
+
+  Scenario: A cold morning does not make IHP start heating hours early
+    Given the room is at 18.0 °C and must reach 21.0 °C in 2 hours
+    And the learned heating slope is 2.0 °C per hour
+    When it is 0.0 °C outside
+    Then IHP waits instead of starting to heat now
+
   Scenario: A slow outdoor cooling eventually triggers a recalculation
     Given IHP monitors the outdoor source "sensor.outdoor_temperature"
     When the outdoor temperature goes 10.0, 9.7, 9.4, 9.1, 8.9 °C

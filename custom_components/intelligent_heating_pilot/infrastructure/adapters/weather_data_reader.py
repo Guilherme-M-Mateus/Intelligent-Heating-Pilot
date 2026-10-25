@@ -250,7 +250,13 @@ class HAWeatherDataReader(IHistoricalDataAdapter):
             else:
                 raw_attrs = state.attributes
                 slim_attrs = {}
-                for key in ("temperature", "humidity", "cloud_coverage", "cloud_cover"):
+                for key in (
+                    "temperature",
+                    "temperature_unit",
+                    "humidity",
+                    "cloud_coverage",
+                    "cloud_cover",
+                ):
                     val = raw_attrs.get(key)
                     if val is not None:
                         slim_attrs[key] = val

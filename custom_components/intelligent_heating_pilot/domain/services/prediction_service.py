@@ -18,8 +18,6 @@ from ..constants import (
     MAX_ANTICIPATION_TIME,
     MEDIUM_CONFIDENCE_SLOPE,
     MIN_ANTICIPATION_TIME,
-    OUTDOOR_TEMP_FACTOR,
-    OUTDOOR_TEMP_REFERENCE,
 )
 from ..value_objects import PredictionResult
 
@@ -34,10 +32,9 @@ class PredictionService:
 
     The calculation considers:
     1. Temperature difference to heat
-    2. Outdoor temperature impact on heat loss
-    3. Humidity effects on heating efficiency
-    4. Solar gain from cloud coverage
-    5. Learned heating slope (heating rate) from historical data
+    2. Humidity effects on heating efficiency
+    3. Solar gain from cloud coverage
+    4. Learned heating slope (heating rate) from historical data
     """
 
     def predict_heating_time(
@@ -46,7 +43,6 @@ class PredictionService:
         target_temp: float,
         learned_slope: float,
         target_time: datetime,
-        outdoor_temp: float | None = None,
         humidity: float | None = None,
         cloud_coverage: float | None = None,
         dead_time_minutes: float = 0.0,
@@ -58,7 +54,6 @@ class PredictionService:
             target_temp: Target temperature in Celsius
             learned_slope: Learned heating slope in °C/hour
             target_time: When target should be reached (mandatory)
-            outdoor_temp: Outdoor temperature in Celsius (optional)
             humidity: Indoor humidity percentage (0-100) (optional)
             cloud_coverage: Cloud coverage percentage (0-100, 0=clear sky) (optional)
             dead_time_minutes: Dead time in minutes (initial period with minimal heating effect)
@@ -111,9 +106,7 @@ class PredictionService:
         # Formula: heating_time = dead_time + (temp_delta / slope) * 60
         anticipation_minutes = dead_time_minutes + (temp_delta / learned_slope) * 60.0
         # Apply environmental correction factors
-        correction_factor = self._calculate_environmental_correction(
-            outdoor_temp, humidity, cloud_coverage
-        )
+        correction_factor = self._calculate_environmental_correction(humidity, cloud_coverage)
 
         anticipation_minutes *= correction_factor
 
@@ -127,7 +120,7 @@ class PredictionService:
         anticipated_start = target_time - timedelta(minutes=anticipation_minutes)
 
         # Calculate confidence level based on slope and available environmental data
-        confidence = self._calculate_confidence(learned_slope, outdoor_temp, humidity)
+        confidence = self._calculate_confidence(learned_slope, humidity)
 
         _LOGGER.debug(
             "Prediction: ΔT=%.1f°C, slope=%.2f°C/h, dead_time=%.1f min, correction=%.2f, "
@@ -149,7 +142,6 @@ class PredictionService:
 
     def _calculate_environmental_correction(
         self,
-        outdoor_temp: float | None,
         humidity: float | None,
         cloud_coverage: float | None,
     ) -> float:
@@ -157,12 +149,16 @@ class PredictionService:
 
         This method combines multiple environmental factors that affect
         heating efficiency:
-        - Outdoor temperature (heat loss)
         - Indoor humidity (thermal mass effect)
         - Cloud coverage (solar gain)
 
+        Outdoor temperature is deliberately absent. The learned slope comes from
+        recent cycles and already reflects recent weather, so a correction anchored
+        on a fixed reference temperature counted the cold twice. A correction relative
+        to the weather of the learning cycles needs their outdoor temperature, which
+        cycles now record (``HeatingCycle.avg_outdoor_temp``).
+
         Args:
-            outdoor_temp: Outdoor temperature in Celsius
             humidity: Indoor humidity percentage (0-100)
             cloud_coverage: Cloud coverage percentage (0-100)
 
@@ -170,17 +166,6 @@ class PredictionService:
             Combined correction factor (>1 means slower heating)
         """
         correction_factor = 1.0
-
-        # Outdoor temperature factor: colder outside means slower heating
-        # Formula: outdoor_factor = 1 + (OUTDOOR_TEMP_REFERENCE - outdoor_temp) * OUTDOOR_TEMP_FACTOR
-        # At outdoor_temp = 20°C: factor = 1.0 (no impact)
-        # At outdoor_temp = 0°C: factor = 2.0 (heating takes twice as long)
-        # At outdoor_temp = -10°C: factor = 2.5 (even slower)
-        if outdoor_temp is not None:
-            outdoor_factor = 1.0 + (OUTDOOR_TEMP_REFERENCE - outdoor_temp) * OUTDOOR_TEMP_FACTOR
-            outdoor_factor = max(0.5, outdoor_factor)  # Minimum factor of 0.5
-            correction_factor *= outdoor_factor
-            _LOGGER.debug("Outdoor temp %.1f°C -> factor %.2f", outdoor_temp, outdoor_factor)
 
         # Humidity factor: higher humidity makes heating feel slower
         # Formula: humidity_factor = 1 + (humidity - HUMIDITY_REFERENCE) * HUMIDITY_FACTOR
@@ -209,18 +194,16 @@ class PredictionService:
     def _calculate_confidence(
         self,
         learned_slope: float,
-        outdoor_temp: float | None,
         humidity: float | None,
     ) -> float:
         """Calculate confidence level in the prediction.
 
         Confidence is based on:
         - Slope validity (higher slope = better learning)
-        - Available environmental data (more data = better prediction)
+        - Available environmental data used by the prediction
 
         Args:
             learned_slope: Learned heating slope in °C/hour
-            outdoor_temp: Outdoor temperature (if available)
             humidity: Indoor humidity (if available)
 
         Returns:
@@ -236,8 +219,6 @@ class PredictionService:
 
         # Adjust confidence based on available environmental data
         data_availability = 0
-        if outdoor_temp is not None:
-            data_availability += 1
         if humidity is not None:
             data_availability += 1
 

@@ -28,7 +28,7 @@ These sensors help IHP make better predictions but are **not required**:
 | Sensor | Purpose | Example |
 |--------|---------|---------|
 | **Indoor Humidity Sensor** | Adjusts calculations for moisture impact | `sensor.living_room_humidity` |
-| **Outdoor Temperature Sensor** | Adjusts the prediction for heat loss to the outside | `sensor.outdoor_temperature` or `weather.home` |
+| **Outdoor Temperature Sensor** | Recorded with each heating cycle; not used in the prediction yet | `sensor.outdoor_temperature` or `weather.home` |
 | **Outdoor Humidity Sensor** | Monitored; not used in the prediction yet | `sensor.outdoor_humidity` or `weather.home` |
 | **Cloud Coverage Sensor** | Adjusts for solar gain | `sensor.cloud_coverage` or `weather.home` |
 

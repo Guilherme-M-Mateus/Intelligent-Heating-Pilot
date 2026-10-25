@@ -105,7 +105,7 @@ class TestSimpleDecisionStrategy:
         """Should START_HEATING when anticipated start time is reached."""
         # GIVEN: Current temp below target, start time reached
         now = datetime.now()
-        target_time = now + timedelta(hours=2)
+        target_time = now + timedelta(hours=1)
 
         mock_scheduler_reader.get_next_timeslot.return_value = ScheduledTimeslot(
             target_time=target_time,
@@ -127,8 +127,8 @@ class TestSimpleDecisionStrategy:
         decision = await simple_strategy.decide_heating_action(environment)
 
         # THEN: Should start heating
-        # With 4°C to gain at 2°C/hour = 2 hours needed
-        # Target in 2 hours = should start now
+        # With 4°C to gain at 2°C/hour = about 2 hours needed
+        # Target in 1 hour = start time already passed, should start now
         assert decision.action == HeatingAction.START_HEATING
         assert decision.target_temp == 20.0
 

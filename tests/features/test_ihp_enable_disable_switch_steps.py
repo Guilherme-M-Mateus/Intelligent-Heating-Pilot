@@ -601,9 +601,19 @@ def preheating_scheduled_at(ihp_switch_context, hour):
     parsers.parse("the VTherm temperature setpoint should be raised to {temp:d}°C at {hour:d}:30")
 )
 def vtherm_setpoint_raised(ihp_switch_context, mock_adapters_ihp_switch, temp, hour):
-    """THEN: Verify temperature setpoint was changed for preheating."""
-    # run_action should have been called to trigger heating
-    mock_adapters_ihp_switch["scheduler_commander"].run_action.assert_called()
+    """THEN: Verify temperature setpoint is changed for preheating by the given time.
+
+    A start still in the future is armed as a timer; firing it stands for the clock
+    reaching the anticipated start.
+    """
+    run_action = mock_adapters_ihp_switch["scheduler_commander"].run_action
+    if not run_action.called:
+        schedule_timer = mock_adapters_ihp_switch["timer_scheduler"].schedule_timer
+        assert schedule_timer.called, "Preheating should be triggered or scheduled"
+        fire_at, timer_callback = schedule_timer.call_args.args
+        assert fire_at <= datetime(2025, 2, 10, hour, 30, 0, tzinfo=UTC)
+        asyncio.run(timer_callback())
+    run_action.assert_called()
 
 
 @then(parsers.parse("the home should reach target temperature by {hour:d}:00"))

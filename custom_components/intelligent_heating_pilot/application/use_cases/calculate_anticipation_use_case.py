@@ -162,7 +162,6 @@ class CalculateAnticipationUseCase:
                 )
 
         # Get remaining environment data
-        outdoor_temp = environment.outdoor_temp if environment else None
         humidity = environment.indoor_humidity if environment else None
         cloud_coverage = environment.cloud_coverage if environment else None
 
@@ -215,7 +214,6 @@ class CalculateAnticipationUseCase:
         prediction = self._prediction_service.predict_heating_time(
             current_temp=current_temp,  # Pass None if unavailable
             target_temp=target_temp,
-            outdoor_temp=outdoor_temp,
             humidity=humidity,
             learned_slope=lhs,
             target_time=target_time,
@@ -294,9 +292,7 @@ class CalculateAnticipationUseCase:
             try:
                 stored = await self._lhs_storage.get_learned_dead_time()
                 if stored is not None and stored > 0:
-                    _LOGGER.debug(
-                        "Using persisted learned dead_time: %.1f minutes", stored
-                    )
+                    _LOGGER.debug("Using persisted learned dead_time: %.1f minutes", stored)
                     return stored
                 if stored is not None and stored <= 0:
                     _LOGGER.debug(

@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 import logging
-from typing import cast
+from collections.abc import Mapping
+from typing import Any, cast
 
 from homeassistant.const import ATTR_UNIT_OF_MEASUREMENT, UnitOfTemperature
 from homeassistant.core import HomeAssistant, State
@@ -76,16 +77,45 @@ def read_temperature_celsius(state: State) -> float | None:
         Temperature in Celsius, or None if missing, not numeric or in an unknown unit
     """
     value = read_numeric_state(state, WEATHER_ATTR_TEMPERATURE)
+    if value is None:
+        return None
+    unit = temperature_unit(state.domain, state.attributes)
+    celsius = to_celsius(value, unit)
+    if celsius is None:
+        _LOGGER.warning("Unsupported temperature unit %s for %s", unit, state.entity_id)
+    return celsius
+
+
+def temperature_unit(domain: str, attributes: Mapping[str, Any]) -> str | None:
+    """Return the temperature unit an entity reports its temperature in.
+
+    Args:
+        domain: Entity domain ("weather" or a sensor domain)
+        attributes: Entity state attributes
+
+    Returns:
+        Unit string, or None when the entity does not state one
+    """
     unit_attribute = (
-        WEATHER_ATTR_TEMPERATURE_UNIT
-        if state.domain == WEATHER_DOMAIN
-        else ATTR_UNIT_OF_MEASUREMENT
+        WEATHER_ATTR_TEMPERATURE_UNIT if domain == WEATHER_DOMAIN else ATTR_UNIT_OF_MEASUREMENT
     )
-    unit = state.attributes.get(unit_attribute)
-    if value is None or not unit or unit == UnitOfTemperature.CELSIUS:
+    unit = attributes.get(unit_attribute)
+    return str(unit) if unit else None
+
+
+def to_celsius(value: float, unit: str | None) -> float | None:
+    """Convert a temperature to Celsius.
+
+    Args:
+        value: Temperature in ``unit``
+        unit: Source unit; None is assumed to already be Celsius
+
+    Returns:
+        Temperature in Celsius, or None if the unit cannot be converted
+    """
+    if not unit or unit == UnitOfTemperature.CELSIUS:
         return value
     try:
         return float(TemperatureConverter.convert(value, unit, UnitOfTemperature.CELSIUS))
     except HomeAssistantError:
-        _LOGGER.warning("Unsupported temperature unit %s for %s", unit, state.entity_id)
         return None

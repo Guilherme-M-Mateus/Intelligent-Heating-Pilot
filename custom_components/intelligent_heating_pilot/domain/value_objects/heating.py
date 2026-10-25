@@ -75,6 +75,10 @@ class HeatingCycle:
                                         is shorter than this threshold return 0.0 for
                                         ``avg_heating_slope`` to prevent aberrant values caused by
                                         near-zero denominators. Defaults to 5.0 minutes.
+        avg_outdoor_temp: Time-weighted average outdoor temperature (°C) during the cycle.
+                          None when no outdoor source is configured or has no history.
+                          Recorded so the slope can later be related to the weather it was
+                          learned in, instead of assuming a fixed reference.
     """
 
     device_id: str
@@ -86,6 +90,7 @@ class HeatingCycle:
     tariff_details: list[TariffPeriodDetail] | None = None
     dead_time_cycle_minutes: float | None = None
     min_effective_duration_minutes: float = 5.0
+    avg_outdoor_temp: float | None = None
 
     @property
     def avg_heating_slope(self) -> float:
@@ -117,6 +122,18 @@ class HeatingCycle:
 
         temp_increase = self.end_temp - self.start_temp
         return temp_increase / duration_hours
+
+    @property
+    def indoor_outdoor_delta(self) -> float | None:
+        """Average indoor minus outdoor temperature during the cycle, in °C.
+
+        Heat loss, and therefore the heating rate, depends on this gap rather than on
+        the outdoor temperature alone. The indoor side uses the cycle midpoint
+        temperature. None when the outdoor temperature is unknown.
+        """
+        if self.avg_outdoor_temp is None:
+            return None
+        return (self.start_temp + self.end_temp) / 2 - self.avg_outdoor_temp
 
     @property
     def duration_minutes(self) -> float:
