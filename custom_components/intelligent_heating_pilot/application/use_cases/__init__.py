@@ -13,12 +13,13 @@ from .calculate_anticipation_use_case import CalculateAnticipationUseCase
 from .check_overshoot_risk_use_case import CheckOvershootRiskUseCase
 from .control_preheating_use_case import ControlPreheatingUseCase
 from .schedule_anticipation_action_use_case import ScheduleAnticipationActionUseCase
-from .update_cache_data_use_case import UpdateCacheDataUseCase
+from .update_cache_data_use_case import LearningResetError, UpdateCacheDataUseCase
 
 __all__ = [
     "CalculateAnticipationUseCase",
     "CheckOvershootRiskUseCase",
     "ControlPreheatingUseCase",
+    "LearningResetError",
     "ScheduleAnticipationActionUseCase",
     "UpdateCacheDataUseCase",
 ]
