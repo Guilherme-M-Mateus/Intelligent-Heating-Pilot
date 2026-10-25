@@ -39,14 +39,16 @@ class InMemoryLhsStorage:
 
     def __init__(self) -> None:
         """Start with no cached values."""
+        self.global_lhs: LHSCacheEntry | None = None
         self.contextual: dict[int, LHSCacheEntry] = {}
 
     async def get_cached_global_lhs(self) -> LHSCacheEntry | None:
-        """No global LHS is cached in these scenarios."""
-        return None
+        """Return the cached global LHS."""
+        return self.global_lhs
 
     async def set_cached_global_lhs(self, value: float, updated_at: datetime) -> None:
-        """Global LHS is not under test."""
+        """Cache the global LHS."""
+        self.global_lhs = LHSCacheEntry(value=value, updated_at=updated_at)
 
     async def get_cached_contextual_lhs(self, hour: int) -> LHSCacheEntry | None:
         """Return the cached contextual LHS for an hour."""
@@ -87,7 +89,7 @@ def learner_with_storage(slot_context: dict) -> None:
 
 @given(
     parsers.re(
-        r"a (?:preheat|daytime) cycle from (?P<start>\d\d:\d\d) to (?P<end>\d\d:\d\d) "
+        r"a (?:preheat|daytime|slow) cycle from (?P<start>\d\d:\d\d) to (?P<end>\d\d:\d\d) "
         r"that heated at (?P<slope>[\d.]+) degrees per hour"
     )
 )
@@ -107,6 +109,23 @@ def heating_cycle(slot_context: dict, start: str, end: str, slope: str) -> None:
             start_temp=CYCLE_START_TEMP,
         )
     )
+
+
+@given(parsers.parse("the global heating slope is {slope:f} degrees per hour"))
+def global_slope(slot_context: dict, slope: float) -> None:
+    """GIVEN: The room has learned a global heating slope."""
+    asyncio.run(slot_context["storage"].set_cached_global_lhs(slope, CYCLE_DAY))
+
+
+@given(
+    parsers.parse(
+        "a slope of {slope:f} degrees per hour is stored for {slot} by an earlier version"
+    )
+)
+def stored_slope(slot_context: dict, slope: float, slot: str) -> None:
+    """GIVEN: Storage still holds a contextual slope written before the fix (#184)."""
+    hour = _at(SLOT_DAY, slot).hour
+    asyncio.run(slot_context["storage"].set_cached_contextual_lhs(hour, slope, CYCLE_DAY))
 
 
 @given("contextual slopes are learned from these cycles")

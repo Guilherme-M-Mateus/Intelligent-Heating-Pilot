@@ -1110,6 +1110,80 @@ class TestLhsLifecycleManagerLazyLoading:
         assert result == 2.5
 
     @pytest.mark.asyncio
+    async def test_get_contextual_lhs_ignores_unrealistic_stored_value(
+        self,
+        manager: LhsLifecycleManager,
+        mock_model_storage: Mock,
+        mock_contextual_lhs_calculator: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """A stored value below MINIMUM_REALISTIC_LHS falls back to the global LHS (#184).
+
+        Earlier versions persisted such values, and the anticipation would then
+        replace them with the hard-coded default instead of the learned global LHS.
+        """
+        # GIVEN: Storage holds an unrealistic contextual value for hour 18
+        mock_model_storage.get_cached_contextual_lhs.return_value = LHSCacheEntry(
+            value=0.15, updated_at=base_datetime, hour=18
+        )
+        mock_contextual_lhs_calculator.calculate_contextual_lhs_for_hour.return_value = None
+        # GIVEN: A slow room whose learned global LHS is 0.4
+        mock_model_storage.get_cached_global_lhs.return_value = LHSCacheEntry(
+            value=0.4, updated_at=base_datetime
+        )
+
+        # WHEN: get_contextual_lhs is called
+        result = await manager.get_contextual_lhs(base_datetime.replace(hour=18), [])
+
+        # THEN: The global LHS is returned and the stored value is not cached
+        assert result == 0.4
+        assert 18 not in manager._cached_contextual_lhs
+
+    @pytest.mark.asyncio
+    async def test_ensure_contextual_lhs_populated_ignores_unrealistic_stored_value(
+        self,
+        manager: LhsLifecycleManager,
+        mock_model_storage: Mock,
+        mock_contextual_lhs_calculator: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """The populate path also falls back to global for an unrealistic stored value."""
+        # GIVEN: Storage holds an unrealistic contextual value for hour 20
+        mock_model_storage.get_cached_contextual_lhs.return_value = LHSCacheEntry(
+            value=0.15, updated_at=base_datetime, hour=20
+        )
+        mock_contextual_lhs_calculator.calculate_contextual_lhs_for_hour.return_value = None
+        mock_model_storage.get_cached_global_lhs.return_value = LHSCacheEntry(
+            value=0.4, updated_at=base_datetime
+        )
+
+        # WHEN: ensure_contextual_lhs_populated is called for hour 20
+        result = await manager.ensure_contextual_lhs_populated(20, [])
+
+        # THEN: The global LHS is returned and nothing is cached for hour 20
+        assert result == 0.4
+        assert 20 not in manager._cached_contextual_lhs
+
+    @pytest.mark.asyncio
+    async def test_startup_does_not_cache_unrealistic_stored_value(
+        self,
+        manager: LhsLifecycleManager,
+        mock_model_storage: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Startup leaves an unrealistic stored value out of the memory cache."""
+        # GIVEN: Storage holds an unrealistic contextual value for every hour
+        mock_model_storage.get_cached_contextual_lhs.return_value = LHSCacheEntry(
+            value=0.15, updated_at=base_datetime
+        )
+
+        # WHEN: Startup is called
+        await manager.startup()
+
+        # THEN: Nothing is cached in memory
+        assert manager._cached_contextual_lhs == {}
+
+    @pytest.mark.asyncio
     async def test_ensure_contextual_lhs_populated_lazy_loads_missing_hour(
         self,
         manager: LhsLifecycleManager,

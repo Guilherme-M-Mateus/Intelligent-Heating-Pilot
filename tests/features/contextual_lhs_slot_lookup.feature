@@ -22,3 +22,17 @@ Feature: Scheduled slots use the heating slope learned for them
   Scenario: The hour a preheat cycle started does not pick up its slope
     When the heating slope for a slot at 05:00 is requested
     Then the heating slope returned is not learned from the preheat cycles
+
+  Scenario: A slot whose learned slope is unrealistically low uses the global slope
+    Given the global heating slope is 0.4 degrees per hour
+    And a slow cycle from 21:00 to 22:00 that heated at 0.15 degrees per hour
+    And contextual slopes are learned from these cycles
+    When the heating slope for a slot at 22:00 is requested
+    Then the heating slope returned is 0.4 degrees per hour
+
+  Scenario: An unrealistically low slope stored by an earlier version uses the global slope
+    Given the global heating slope is 0.4 degrees per hour
+    And a slope of 0.15 degrees per hour is stored for 22:00 by an earlier version
+    And Home Assistant restarts
+    When the heating slope for a slot at 22:00 is requested
+    Then the heating slope returned is 0.4 degrees per hour

@@ -184,15 +184,12 @@ class LhsLifecycleManager:
                 "Loading contextual LHS for current hour: %d (lazy loading enabled)", current_hour
             )
 
-            cached_contextual = await self._model_storage.get_cached_contextual_lhs(current_hour)
-            if cached_contextual is not None:
-                # Extract value from LHSCacheEntry
-                lhs_value = cached_contextual.value
-                self._cached_contextual_lhs[current_hour] = lhs_value
+            contextual_value = await self._load_stored_contextual_lhs(current_hour)
+            if contextual_value is not None:
                 _LOGGER.debug(
                     "Loaded cached contextual LHS for current hour %d: %.2f °C/h",
                     current_hour,
-                    lhs_value,
+                    contextual_value,
                 )
             else:
                 _LOGGER.debug(
@@ -483,12 +480,9 @@ class LhsLifecycleManager:
             return cached_value
 
         # Not in memory cache, try to get from storage
-        cached_entry = await self._model_storage.get_cached_contextual_lhs(target_hour)
+        cached_contextual = await self._load_stored_contextual_lhs(target_hour)
 
-        if cached_entry is not None:
-            cached_contextual = cached_entry.value
-            # Cache in memory for subsequent calls
-            self._cached_contextual_lhs[target_hour] = cached_contextual
+        if cached_contextual is not None:
             _LOGGER.debug(
                 "Loaded from storage and cached contextual LHS for hour %d: %.2f °C/h",
                 target_hour,
@@ -503,7 +497,7 @@ class LhsLifecycleManager:
             cycles, target_hour
         )
 
-        # If contextual LHS is None or invalid (< 0.5°C/h), fallback to global LHS
+        # If contextual LHS is None or unrealistic, fall back to global LHS
         from ..domain.constants import MINIMUM_REALISTIC_LHS
 
         if computed_lhs is None or computed_lhs < MINIMUM_REALISTIC_LHS:
@@ -635,6 +629,35 @@ class LhsLifecycleManager:
 
         return contextual_lhs_by_hour
 
+    async def _load_stored_contextual_lhs(self, hour: int) -> float | None:
+        """Load a stored contextual LHS into the memory cache if it is realistic.
+
+        Values below MINIMUM_REALISTIC_LHS may still be stored by earlier
+        versions, and recalculation never removes them, so they are filtered on
+        read. Skipping them lets callers fall back to the global LHS (#184).
+
+        Args:
+            hour: Hour (0-23) to load.
+
+        Returns:
+            The stored LHS in C/hour, or None if absent or unrealistic.
+        """
+        from ..domain.constants import MINIMUM_REALISTIC_LHS
+
+        cached_entry = await self._model_storage.get_cached_contextual_lhs(hour)
+        if cached_entry is None:
+            return None
+        if cached_entry.value < MINIMUM_REALISTIC_LHS:
+            _LOGGER.debug(
+                "Ignoring stored contextual LHS for hour %d (%.2f°C/h < %.2f°C/h)",
+                hour,
+                cached_entry.value,
+                MINIMUM_REALISTIC_LHS,
+            )
+            return None
+        self._cached_contextual_lhs[hour] = cached_entry.value
+        return cached_entry.value
+
     async def ensure_contextual_lhs_populated(
         self,
         target_hour: int,
@@ -720,12 +743,9 @@ class LhsLifecycleManager:
             return cached_value
 
         # Check storage cache
-        cached_entry = await self._model_storage.get_cached_contextual_lhs(target_hour)
+        cached_contextual = await self._load_stored_contextual_lhs(target_hour)
 
-        if cached_entry is not None:
-            cached_contextual = cached_entry.value
-            # Load into memory cache for subsequent calls
-            self._cached_contextual_lhs[target_hour] = cached_contextual
+        if cached_contextual is not None:
             _LOGGER.debug(
                 "Loaded contextual LHS from storage for hour %d: %.2f °C/h",
                 target_hour,

@@ -11,6 +11,7 @@ from datetime import datetime, timedelta, timezone
 import pytest
 from homeassistant.util import dt as dt_util
 
+from custom_components.intelligent_heating_pilot.domain.constants import MINIMUM_REALISTIC_LHS
 from custom_components.intelligent_heating_pilot.domain.services.contextual_lhs_calculator_service import (
     ContextualLHSCalculatorService,
 )
@@ -390,6 +391,58 @@ class TestContextualLHSCalculatorService:
         result = service.calculate_contextual_lhs_for_hour(cycles, 7)
 
         assert result is None
+
+    def test_contextual_lhs_returns_none_when_average_below_realistic_minimum(
+        self, service: ContextualLHSCalculatorService, base_datetime: datetime
+    ) -> None:
+        """An average below MINIMUM_REALISTIC_LHS is not learned, so callers use global (#184)."""
+        cycles = [
+            self._create_cycle(
+                start_time=base_datetime.replace(hour=6),
+                end_time=base_datetime.replace(hour=7),
+                start_temp=20.0,
+                end_temp=20.15,  # 0.15°C/h
+            ),
+        ]
+
+        result = service.calculate_contextual_lhs_for_hour(cycles, 7)
+
+        assert result is None
+
+    def test_contextual_lhs_keeps_slow_but_realistic_average(
+        self, service: ContextualLHSCalculatorService, base_datetime: datetime
+    ) -> None:
+        """A slow average just above MINIMUM_REALISTIC_LHS is still a learned value."""
+        slow_slope = MINIMUM_REALISTIC_LHS + 0.05
+        cycles = [
+            self._create_cycle(
+                start_time=base_datetime.replace(hour=6),
+                end_time=base_datetime.replace(hour=7),
+                start_temp=20.0,
+                end_temp=20.0 + slow_slope,
+            ),
+        ]
+
+        result = service.calculate_contextual_lhs_for_hour(cycles, 7)
+
+        assert result == pytest.approx(slow_slope, abs=0.001)
+
+    def test_calculate_all_contextual_lhs_reports_unrealistic_hour_as_none(
+        self, service: ContextualLHSCalculatorService, base_datetime: datetime
+    ) -> None:
+        """The bulk write path never persists an unrealistic hour."""
+        cycles = [
+            self._create_cycle(
+                start_time=base_datetime.replace(hour=6),
+                end_time=base_datetime.replace(hour=7),
+                start_temp=20.0,
+                end_temp=20.1,  # 0.1°C/h
+            ),
+        ]
+
+        result = service.calculate_all_contextual_lhs(cycles)
+
+        assert result[7] is None
 
     # ===== Helper Methods =====
 

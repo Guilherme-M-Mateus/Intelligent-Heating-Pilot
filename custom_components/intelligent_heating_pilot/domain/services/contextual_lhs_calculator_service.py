@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 from datetime import UTC, tzinfo
 
+from ..constants import MINIMUM_REALISTIC_LHS
 from ..value_objects import HeatingCycle
 
 _LOGGER = logging.getLogger(__name__)
@@ -99,7 +100,9 @@ class ContextualLHSCalculatorService:
             target_hour: Hour (0-23) to filter by
 
         Returns:
-            Average LHS value or None if no data for this hour
+            Average LHS value, or None if no data for this hour or if the
+            average is below MINIMUM_REALISTIC_LHS. An unrealistic hour must
+            fall back to the global LHS, so it is never reported as learned.
 
         Raises:
             ValueError: If target_hour not in 0-23
@@ -127,6 +130,15 @@ class ContextualLHSCalculatorService:
             return None
 
         avg_lhs = sum(lhs_values) / len(lhs_values)
+
+        if avg_lhs < MINIMUM_REALISTIC_LHS:
+            _LOGGER.debug(
+                "Contextual LHS for hour %d is unrealistic (%.2f°C/h < %.2f°C/h), ignoring it",
+                target_hour,
+                avg_lhs,
+                MINIMUM_REALISTIC_LHS,
+            )
+            return None
 
         _LOGGER.info(
             "Calculated contextual LHS for hour %d: %.2f°C/h from %d cycles",
