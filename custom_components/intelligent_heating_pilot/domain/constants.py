@@ -18,8 +18,6 @@ DEFAULT_LEARNED_SLOPE = 2.0  # Default slope when no learning data exists
 DEFAULT_DEAD_TIME_MINUTES = 0.0  # Default dead time when no learning data exists
 
 # Environmental correction factors
-OUTDOOR_TEMP_REFERENCE = 20.0  # Reference outdoor temperature (°C)
-OUTDOOR_TEMP_FACTOR = 0.05  # Impact factor per degree difference
 HUMIDITY_REFERENCE = 50.0  # Reference humidity percentage
 HUMIDITY_FACTOR = 0.002  # Impact factor per humidity percentage point
 CLOUD_COVERAGE_FACTOR = 0.001  # Solar gain factor per cloud coverage percentage

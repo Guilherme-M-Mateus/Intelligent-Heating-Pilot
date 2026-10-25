@@ -17,6 +17,7 @@ from homeassistant.core import HomeAssistant
 from custom_components.intelligent_heating_pilot.application import HeatingOrchestrator
 from custom_components.intelligent_heating_pilot.infrastructure.event_bridge import (
     _MONITORED_ENTITY_CHANGE_THRESHOLD,
+    _MONITORED_TEMPERATURE_CHANGE_THRESHOLD,
     HAEventBridge,
 )
 
@@ -747,3 +748,111 @@ class TestIHPEnabledParameter:
 
         call_kwargs = mock_orchestrator.calculate_and_schedule_anticipation.call_args[1]
         assert call_kwargs["ihp_enabled"] is True
+
+
+def _make_weather_state(condition: str, **attributes: float | str) -> Mock:
+    """Return a mock weather State whose numbers live in attributes."""
+    s = _make_state(condition, attributes)
+    s.domain = "weather"
+    return s
+
+
+class TestHasMeaningfulWeatherChange:
+    """Weather entities carry their values in attributes, not in the state."""
+
+    def test_cloud_coverage_swing_with_same_condition_is_meaningful(self):
+        bridge = _make_bridge()
+        event = _make_event(
+            "weather.home",
+            _make_weather_state("cloudy", cloud_coverage=10.0),
+            _make_weather_state("cloudy", cloud_coverage=90.0),
+        )
+        assert bridge._has_meaningful_monitored_change(event) is True
+
+    def test_small_attribute_change_is_not_meaningful(self):
+        bridge = _make_bridge()
+        event = _make_event(
+            "weather.home",
+            _make_weather_state("cloudy", temperature=10.0, humidity=60.0),
+            _make_weather_state("cloudy", temperature=10.5, humidity=61.0),
+        )
+        assert bridge._has_meaningful_monitored_change(event) is False
+
+    def test_condition_change_alone_is_not_meaningful(self):
+        """IHP does not use the condition string, so it is no reason to recalculate."""
+        bridge = _make_bridge()
+        event = _make_event(
+            "weather.home",
+            _make_weather_state("cloudy", temperature=10.0),
+            _make_weather_state("sunny", temperature=10.0),
+        )
+        assert bridge._has_meaningful_monitored_change(event) is False
+
+    def test_temperature_uses_finer_threshold_than_percentages(self):
+        bridge = _make_bridge()
+        event = _make_event(
+            "weather.home",
+            _make_weather_state("cloudy", temperature=10.0, humidity=60.0),
+            _make_weather_state(
+                "cloudy",
+                temperature=10.0 - _MONITORED_TEMPERATURE_CHANGE_THRESHOLD,
+                humidity=60.0,
+            ),
+        )
+        assert bridge._has_meaningful_monitored_change(event) is True
+
+    def test_attribute_disappearing_is_meaningful(self):
+        bridge = _make_bridge()
+        event = _make_event(
+            "weather.home",
+            _make_weather_state("cloudy", temperature=10.0),
+            _make_weather_state("cloudy"),
+        )
+        assert bridge._has_meaningful_monitored_change(event) is True
+
+    def test_non_numeric_attribute_is_ignored(self):
+        bridge = _make_bridge()
+        event = _make_event(
+            "weather.home",
+            _make_weather_state("cloudy", temperature="n/a"),
+            _make_weather_state("cloudy", temperature="n/b"),
+        )
+        assert bridge._has_meaningful_monitored_change(event) is False
+
+
+def _make_temperature_sensor_state(value: float) -> Mock:
+    """Return a mock outdoor temperature sensor State."""
+    s = _make_state(str(value), {"device_class": "temperature"})
+    s.domain = "sensor"
+    s.entity_id = "sensor.outdoor_temperature"
+    return s
+
+
+class TestMonitoredDrift:
+    """Values are compared to the last one acted on, not to the previous state."""
+
+    def _feed(self, bridge: HAEventBridge, values: list[float]) -> list[bool]:
+        states = [_make_temperature_sensor_state(v) for v in values]
+        return [
+            bridge._has_meaningful_monitored_change(
+                _make_event("sensor.outdoor_temperature", old, new)
+            )
+            for old, new in zip(states, states[1:], strict=False)
+        ]
+
+    def test_slow_drift_triggers_once_it_adds_up(self):
+        bridge = _make_bridge()
+        assert self._feed(bridge, [10.0, 9.7, 9.4, 9.1, 8.9]) == [False, False, False, True]
+
+    def test_reference_moves_after_a_trigger(self):
+        bridge = _make_bridge()
+        assert self._feed(bridge, [10.0, 8.9, 8.5, 7.8]) == [True, False, True]
+
+    def test_entity_backing_several_fields_is_tracked_once(self):
+        """One weather entity for humidity, temperature and cloud gives one listener."""
+        bridge = _make_bridge(monitored_entity_ids=["weather.home"] * 3)
+        assert bridge._tracked_entities.count("weather.home") == 1
+
+    def test_temperature_sensor_uses_temperature_threshold(self):
+        bridge = _make_bridge()
+        assert self._feed(bridge, [10.0, 10.0 - _MONITORED_TEMPERATURE_CHANGE_THRESHOLD]) == [True]

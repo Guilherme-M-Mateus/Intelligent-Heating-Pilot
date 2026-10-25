@@ -4,6 +4,7 @@ This adapter implements IHeatingCycleStorage by using Home Assistant's storage h
 to persist heating cycles with incremental update support.
 """
 
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -646,3 +647,26 @@ async def test_get_oldest_explored_date_single_date(
 
     result = await cache.get_oldest_explored_date(device_id)
     assert result == d
+
+
+@pytest.mark.asyncio
+async def test_outdoor_temperature_survives_serialization(
+    cache: HAHeatingCycleStorage, device_id: str, base_time: datetime
+) -> None:
+    """The cycle's outdoor average is stored and read back."""
+    cycle = replace(create_test_heating_cycle(device_id, base_time), avg_outdoor_temp=4.5)
+
+    restored = cache._deserialize_heating_cycle(cache._serialize_heating_cycle(cycle))
+
+    assert restored.avg_outdoor_temp == 4.5
+
+
+@pytest.mark.asyncio
+async def test_cycle_stored_before_outdoor_recording_reads_as_unknown(
+    cache: HAHeatingCycleStorage, device_id: str, base_time: datetime
+) -> None:
+    """Cycles persisted by older versions have no outdoor average."""
+    stored = cache._serialize_heating_cycle(create_test_heating_cycle(device_id, base_time))
+    del stored["avg_outdoor_temp"]
+
+    assert cache._deserialize_heating_cycle(stored).avg_outdoor_temp is None

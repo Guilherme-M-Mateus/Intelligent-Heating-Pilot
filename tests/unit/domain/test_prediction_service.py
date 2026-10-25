@@ -13,7 +13,6 @@ from tests.unit.domain.fixtures import (
     TEST_CURRENT_TEMP,
     TEST_HUMIDITY,
     TEST_LEARNED_SLOPE,
-    TEST_OUTDOOR_TEMP,
     TEST_TARGET_TEMP,
     get_future_datetime,
 )
@@ -35,7 +34,6 @@ class TestPredictionService(unittest.TestCase):
             target_temp=TEST_TARGET_TEMP,
             learned_slope=TEST_LEARNED_SLOPE,
             target_time=target_time,
-            outdoor_temp=TEST_OUTDOOR_TEMP,
             humidity=TEST_HUMIDITY,
         )
 

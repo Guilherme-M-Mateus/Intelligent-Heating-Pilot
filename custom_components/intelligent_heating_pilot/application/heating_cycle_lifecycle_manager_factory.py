@@ -12,6 +12,9 @@ from ..infrastructure.adapters.climate_data_reader import HAClimateDataReader
 from ..infrastructure.adapters.entity_attribute_mapper_registry import (
     EntityAttributeMapperRegistry,
 )
+from ..infrastructure.adapters.outdoor_temperature_history_reader import (
+    HAOutdoorTemperatureHistoryReader,
+)
 from ..infrastructure.adapters.vtherm_attribute_mapper import VThermAttributeMapper
 from ..infrastructure.recorder_queue import get_extraction_semaphore, get_recorder_queue
 from .heating_cycle_lifecycle_manager import HeatingCycleLifecycleManager
@@ -124,6 +127,14 @@ class HeatingCycleLifecycleManagerFactory:
 
         climate_adapter = HAClimateDataReader(hass, get_recorder_queue(hass), vtherm_entity_id)
         historical_adapters: list[IHistoricalDataAdapter] = [climate_adapter]
+        if device_config.temperature_out_entity_id:
+            # Record the outdoor temperature of each cycle, so the learned slope can
+            # later be matched to the weather it was observed in
+            historical_adapters.append(
+                HAOutdoorTemperatureHistoryReader(
+                    hass, get_recorder_queue(hass), device_config.temperature_out_entity_id
+                )
+            )
         _LOGGER.debug(
             "Configured %d historical adapter(s) for device_id=%s with dynamic entity detection",
             len(historical_adapters),

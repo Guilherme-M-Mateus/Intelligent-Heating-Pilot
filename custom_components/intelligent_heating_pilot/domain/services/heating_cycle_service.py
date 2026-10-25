@@ -508,6 +508,7 @@ class HeatingCycleService(IHeatingCycleService):
             tariff_details=tariff_details,
             dead_time_cycle_minutes=dead_time_cycle_minutes,
             min_effective_duration_minutes=float(self._min_cycle_duration_minutes),
+            avg_outdoor_temp=self._compute_average_outdoor_temp(data, start_time, end_time),
         )
         _LOGGER.debug(
             "Created single heating cycle: %s (energy=%.3fkWh duration=%.1fmin cost=%.3f€)",
@@ -605,6 +606,9 @@ class HeatingCycleService(IHeatingCycleService):
                 tariff_details=[],  # TODO: calculate for sub-cycle
                 dead_time_cycle_minutes=dead_time_cycle_minutes,
                 min_effective_duration_minutes=float(self._min_cycle_duration_minutes),
+                avg_outdoor_temp=self._compute_average_outdoor_temp(
+                    history_data_set.data, current_sub_cycle_start_time, sub_cycle_end_time
+                ),
             )
             created.append(sub_cycle)
             _LOGGER.debug("  Created sub-cycle %d: %s", i + 1, sub_cycle)
@@ -625,11 +629,57 @@ class HeatingCycleService(IHeatingCycleService):
                 tariff_details=[],  # TODO: calculate for remaining sub-cycle
                 dead_time_cycle_minutes=None,  # Not for remaining cycles
                 min_effective_duration_minutes=float(self._min_cycle_duration_minutes),
+                avg_outdoor_temp=self._compute_average_outdoor_temp(
+                    history_data_set.data, current_sub_cycle_start_time, remaining_end_time
+                ),
             )
             created.append(remaining_cycle)
             _LOGGER.debug("  Created remaining sub-cycle: %s", remaining_cycle)
 
         return created
+
+    @staticmethod
+    def _compute_average_outdoor_temp(
+        data: dict[HistoricalDataKey, list[HistoricalMeasurement]],
+        start_time: datetime,
+        end_time: datetime,
+    ) -> float | None:
+        """Return the time-weighted average outdoor temperature over a cycle window.
+
+        Outdoor readings are a step function: each value holds until the next one.
+        The value in force at ``start_time`` is the last reading at or before it.
+
+        Args:
+            data: Historical measurements by key; uses OUTDOOR_TEMP only.
+            start_time: Start of the window.
+            end_time: End of the window.
+
+        Returns:
+            Average temperature in °C, or None if no reading covers the window.
+        """
+        readings = sorted(
+            (m.timestamp, float(m.value))
+            for m in data.get(HistoricalDataKey.OUTDOOR_TEMP, [])
+            if isinstance(m.value, int | float) and not isinstance(m.value, bool)
+        )
+        current: float | None = None
+        segment_start = start_time
+        weighted_sum = 0.0
+        covered_seconds = 0.0
+        for timestamp, value in readings:
+            if timestamp >= end_time:
+                break
+            if timestamp > start_time and current is not None:
+                seconds = (timestamp - segment_start).total_seconds()
+                weighted_sum += current * seconds
+                covered_seconds += seconds
+            current = value
+            segment_start = max(timestamp, start_time)
+        if current is not None:
+            seconds = (end_time - segment_start).total_seconds()
+            weighted_sum += current * seconds
+            covered_seconds += seconds
+        return weighted_sum / covered_seconds if covered_seconds > 0 else None
 
     def _compute_energy_kwh(
         self,

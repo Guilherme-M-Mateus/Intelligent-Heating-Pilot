@@ -28,10 +28,11 @@ These sensors help IHP make better predictions but are **not required**:
 | Sensor | Purpose | Example |
 |--------|---------|---------|
 | **Indoor Humidity Sensor** | Adjusts calculations for moisture impact | `sensor.living_room_humidity` |
-| **Outdoor Humidity Sensor** | Monitored; not used in the prediction yet | `sensor.outdoor_humidity` |
-| **Cloud Coverage Sensor** | Adjusts for solar gain | `sensor.cloud_coverage` |
+| **Outdoor Temperature Sensor** | Recorded with each heating cycle; not used in the prediction yet | `sensor.outdoor_temperature` or `weather.home` |
+| **Outdoor Humidity Sensor** | Monitored; not used in the prediction yet | `sensor.outdoor_humidity` or `weather.home` |
+| **Cloud Coverage Sensor** | Adjusts for solar gain | `sensor.cloud_coverage` or `weather.home` |
 
-> **Note:** An outdoor temperature sensor cannot be configured yet, so the outdoor temperature adjustment is not applied. The learned heating slope comes from your recent heating cycles and therefore already reflects recent weather.
+> **Weather entities:** The outdoor temperature, outdoor humidity and cloud coverage fields accept either a dedicated sensor or a `weather.*` entity. For a weather entity, IHP reads its `temperature`, `humidity` and `cloud_coverage` attributes, so one weather entity can feed all three fields. Temperatures in °F or K are converted to °C.
 
 ### Step 4: Complete Setup
 

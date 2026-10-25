@@ -217,20 +217,11 @@ IHP automatically learns dead time from your heating cycles and refines it over 
 
 The basic calculation is then **adjusted** based on real-world conditions:
 
-#### 1. **Outdoor Temperature Effect**
+#### 1. **Outdoor Temperature**
 
-Colder outdoor air = **More heat loss** = **Need to heat longer**
+Colder outdoor air means more heat loss, so the room heats more slowly. IHP does **not** apply a separate outdoor adjustment to the prediction: the learned heating slope comes from your recent heating cycles, so it already reflects the weather they ran in. An extra fixed factor would count the cold twice and start heating far too early.
 
-```
-Adjustment Factor = 1.0 + (20°C - outdoor_temp) × 0.05
-
-Examples:
-- Outdoor temp 20°C: factor = 1.0 (no adjustment)
-- Outdoor temp 0°C: factor = 2.0 (heat twice as long)
-- Outdoor temp -10°C: factor = 2.5 (heat 2.5× longer)
-```
-
-> **Note:** This adjustment is only applied when an outdoor temperature is available. An outdoor temperature sensor cannot be configured yet, so it is currently skipped.
+When an outdoor temperature source (a sensor or a `weather.*` entity) is configured, IHP records the average outdoor temperature of every heating cycle. This history will let a future version adjust the slope only by the difference between today's weather and the weather of the cycles it was learned from.
 
 #### 2. **Humidity Effect**
 

@@ -161,6 +161,8 @@ class HAWeatherDataReader(IHistoricalDataAdapter):
         Returns:
             Parsed datetime object
         """
+        # last_changed only moves with the condition string, so attribute-only
+        # updates (temperature, humidity...) would all share one timestamp.
         timestamp_str = record.get("last_updated", record.get("last_changed"))
 
         if isinstance(timestamp_str, str):
@@ -227,6 +229,8 @@ class HAWeatherDataReader(IHistoricalDataAdapter):
             start_time,
             end_time,
             entity_ids=[entity_id],
+            # weather is not a significant domain: attribute-only updates would be dropped
+            significant_changes_only=False,
         )
 
         # Serialize recorder access via shared FIFO queue (MANDATORY)
@@ -246,7 +250,13 @@ class HAWeatherDataReader(IHistoricalDataAdapter):
             else:
                 raw_attrs = state.attributes
                 slim_attrs = {}
-                for key in ("temperature", "humidity", "cloud_coverage", "cloud_cover"):
+                for key in (
+                    "temperature",
+                    "temperature_unit",
+                    "humidity",
+                    "cloud_coverage",
+                    "cloud_cover",
+                ):
                     val = raw_attrs.get(key)
                     if val is not None:
                         slim_attrs[key] = val
