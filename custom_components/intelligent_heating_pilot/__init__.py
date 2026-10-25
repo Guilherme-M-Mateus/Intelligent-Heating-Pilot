@@ -17,12 +17,13 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, Platform
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse, callback
-from homeassistant.exceptions import ServiceValidationError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_track_point_in_time
 from homeassistant.util import dt as dt_util
 
+from .application.use_cases import LearningResetError
 from .const import CONF_IHP_ENABLED, DOMAIN, SERVICE_CALCULATE_ANTICIPATED_START_TIME
 from .heating_application import HeatingApplication
 from .utils.config_helpers import as_bool
@@ -254,7 +255,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             coord = _resolve_coordinator(call.data["entity_id"])
             if coord._orchestrator is None:
                 raise ServiceValidationError("IHP is not initialized yet for this device.")
-            await coord.async_reset_learning()
+            try:
+                await coord.async_reset_learning()
+            except LearningResetError as err:
+                raise HomeAssistantError(
+                    f"Learning reset incomplete for device {coord.get_device_id()}: {err}"
+                ) from err
             _LOGGER.info(
                 "reset_learning: learning data cleared for device %s", coord.get_device_id()
             )

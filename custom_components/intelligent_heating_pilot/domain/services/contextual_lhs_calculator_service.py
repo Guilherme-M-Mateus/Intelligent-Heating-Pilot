@@ -1,12 +1,13 @@
 """Service for calculating contextual Learning Heating Slope (LHS).
 
-Pure domain logic for grouping cycles by start hour and calculating
-average heating slopes per hour. No Home Assistant dependencies.
+Pure domain logic for grouping cycles by the hour their target was reached
+and calculating average heating slopes per hour. No Home Assistant dependencies.
 """
 
 from __future__ import annotations
 
 import logging
+from datetime import UTC, tzinfo
 
 from ..value_objects import HeatingCycle
 
@@ -14,19 +15,42 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class ContextualLHSCalculatorService:
-    """Calculate contextual LHS grouped by start hour.
+    """Calculate contextual LHS grouped by the hour the target was reached.
+
+    The contextual hour is the key shared by the write side (cycles learned
+    here) and the read side (anticipation looks up ``target_time.hour``).
+    A preheat cycle for a 07:00 slot starts at 05:00 or 06:00 but ends when the
+    target is reached, around 07:00. Keying cycles by their end hour therefore
+    lets each scheduled slot read the slope learned while preheating for it.
 
     Responsibilities:
-    - Extract hour from cycle start_time
-    - Group cycles by start hour
+    - Extract the contextual hour from a cycle (its end_time hour)
+    - Group cycles by contextual hour
     - Calculate average LHS per hour
     - Handle empty groups gracefully
+
+    Cycle timestamps come from recorder history as naive UTC datetimes, while the
+    scheduled slots used for lookups are in local time. ``local_tz`` brings both to
+    the same clock; without it the cycle hour is used as stored.
 
     Pure domain logic with no Home Assistant dependencies.
     """
 
+    def __init__(self, local_tz: tzinfo | None = None) -> None:
+        """Initialize the service.
+
+        Args:
+            local_tz: Timezone of the scheduled slots. Naive cycle times are read as UTC.
+        """
+        self._local_tz = local_tz
+
     def extract_hour_from_cycle(self, cycle: HeatingCycle) -> int:
-        """Extract hour (0-23) from cycle start time.
+        """Extract the contextual hour (0-23) of a cycle.
+
+        Uses the end time, i.e. when the target temperature was reached, so the
+        key matches the scheduled target hour used for lookups. Using the start
+        time would file a preheat cycle under an earlier hour than the slot it
+        served, and the slot would never read its own learned slope.
 
         Args:
             cycle: The heating cycle
@@ -34,23 +58,24 @@ class ContextualLHSCalculatorService:
         Returns:
             Hour of day (0-23)
         """
-        _LOGGER.debug("Extracting hour from cycle started at %s", cycle.start_time)
-        hour = cycle.start_time.hour
+        _LOGGER.debug("Extracting hour from cycle ended at %s", cycle.end_time)
+        end_time = cycle.end_time
+        if self._local_tz is not None:
+            end_time = end_time.replace(tzinfo=end_time.tzinfo or UTC).astimezone(self._local_tz)
+        hour = end_time.hour
         _LOGGER.debug("Extracted hour: %d", hour)
         return hour
 
-    def group_cycles_by_start_hour(
-        self, cycles: list[HeatingCycle]
-    ) -> dict[int, list[HeatingCycle]]:
-        """Group cycles by their start_time hour.
+    def group_cycles_by_hour(self, cycles: list[HeatingCycle]) -> dict[int, list[HeatingCycle]]:
+        """Group cycles by their contextual hour (see extract_hour_from_cycle).
 
         Args:
             cycles: All extracted heating cycles
 
         Returns:
-            Mapping {hour: [cycles_starting_at_hour]}
+            Mapping {hour: [cycles_ending_at_hour]}
         """
-        _LOGGER.debug("Grouping %d cycles by start hour", len(cycles))
+        _LOGGER.debug("Grouping %d cycles by contextual hour", len(cycles))
 
         grouped: dict[int, list[HeatingCycle]] = {h: [] for h in range(24)}
 
@@ -67,7 +92,7 @@ class ContextualLHSCalculatorService:
     def calculate_contextual_lhs_for_hour(
         self, cycles: list[HeatingCycle], target_hour: int
     ) -> float | None:
-        """Calculate average LHS for cycles starting at target_hour.
+        """Calculate average LHS for cycles whose contextual hour is target_hour.
 
         Args:
             cycles: All extracted cycles
@@ -86,7 +111,7 @@ class ContextualLHSCalculatorService:
             "Calculating contextual LHS for hour %d from %d cycles", target_hour, len(cycles)
         )
 
-        # Filter cycles starting at target hour
+        # Filter cycles that reached their target during target hour
         matching_cycles = [c for c in cycles if self.extract_hour_from_cycle(c) == target_hour]
 
         if not matching_cycles:

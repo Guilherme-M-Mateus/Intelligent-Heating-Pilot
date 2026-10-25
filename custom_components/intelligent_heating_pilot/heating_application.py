@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -107,6 +108,10 @@ class HeatingApplication:
         # IHP enabled state
         self._ihp_enabled = device_config.ihp_enabled
         self._last_known_dead_time: float | None = None
+        # Serializes async_update and async_reset_learning: an update that
+        # computed its anticipation before a reset must not write the old
+        # dead time back after it.
+        self._learning_lock = asyncio.Lock()
 
         # Infrastructure adapters
         self._lhs_storage: HALhsStorage | None = None
@@ -196,7 +201,9 @@ class HeatingApplication:
             safety_shutoff_grace_minutes=self._safety_shutoff_grace_minutes,
         )
         global_lhs_calculator = GlobalLHSCalculatorService()
-        contextual_lhs_calculator = ContextualLHSCalculatorService()
+        contextual_lhs_calculator = ContextualLHSCalculatorService(
+            local_tz=dt_util.get_default_time_zone()
+        )
 
         # Create LHS lifecycle manager FIRST (required by heating_cycle_manager)
         self._lhs_manager = LhsLifecycleManagerFactory.create(
@@ -485,6 +492,11 @@ class HeatingApplication:
 
     async def async_update(self) -> None:
         """Trigger anticipation calculation and cache results for sensors."""
+        async with self._learning_lock:
+            await self._async_update_locked()
+
+    async def _async_update_locked(self) -> None:
+        """Run async_update while holding the learning lock."""
         if not self._orchestrator:
             return
 
@@ -557,24 +569,39 @@ class HeatingApplication:
 
         The orchestrator clears storage and the lifecycle managers' caches; the
         sensor-facing caches held here must be dropped too, otherwise sensors
-        keep showing the old learned values until restart.
+        keep showing the old learned values until restart. They are refreshed
+        even when part of the reset failed, so sensors show what is really
+        stored; the error is then raised to the caller.
         """
         _LOGGER.debug("Entering HeatingApplication.async_reset_learning()")
         if self._orchestrator is None:
             return
 
-        await self._orchestrator.reset_all_learning_data(device_id=self._device_id)
-
-        self._lhs_cache = DEFAULT_LEARNED_SLOPE
-        self._contextual_lhs_cache = {}
-        self._last_known_dead_time = None
-        self._fire_dead_time_updated_event(None)
-
-        if self._event_bridge is not None:
-            self._event_bridge._request_recalculate()
+        async with self._learning_lock:
+            try:
+                await self._orchestrator.reset_all_learning_data(device_id=self._device_id)
+            finally:
+                await self._refresh_after_reset()
 
         _LOGGER.info("[%s] Learning data reset, recalculation requested", self._device_id)
         _LOGGER.debug("Exiting HeatingApplication.async_reset_learning()")
+
+    async def _refresh_after_reset(self) -> None:
+        """Reload sensor-facing caches from the managers and force a sensor refresh."""
+        self._lhs_cache = DEFAULT_LEARNED_SLOPE
+        self._contextual_lhs_cache = {}
+        self._last_known_dead_time = None
+        await self.refresh_caches()
+
+        try:
+            remaining_dead_time = await self.get_current_dead_time()
+        except Exception:  # noqa: BLE001
+            _LOGGER.debug("Failed to read dead time after reset", exc_info=True)
+            remaining_dead_time = None
+        self._fire_dead_time_updated_event(remaining_dead_time)
+
+        if self._event_bridge is not None:
+            self._event_bridge.request_forced_publish()
 
     def _on_extraction_complete(self) -> None:
         """Trigger sensor recalculation after background extraction completes."""

@@ -1,12 +1,12 @@
 """Unit tests for ContextualLHSCalculatorService.
 
-Tests the pure domain logic for grouping cycles by start hour
-and calculating contextual heating slopes.
+Tests the pure domain logic for grouping cycles by the hour their target was
+reached (end hour) and calculating contextual heating slopes.
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from homeassistant.util import dt as dt_util
@@ -37,10 +37,10 @@ class TestContextualLHSCalculatorService:
     def test_extract_hour_at_midnight(
         self, service: ContextualLHSCalculatorService, base_datetime: datetime
     ) -> None:
-        """Test extracting hour from cycle at midnight (hour=0)."""
+        """Test extracting hour from cycle ending at midnight (hour=0)."""
         cycle = self._create_cycle(
-            start_time=base_datetime,
-            end_time=base_datetime + timedelta(hours=1),
+            start_time=base_datetime - timedelta(hours=1),
+            end_time=base_datetime,
         )
 
         hour = service.extract_hour_from_cycle(cycle)
@@ -50,16 +50,33 @@ class TestContextualLHSCalculatorService:
     def test_extract_hour_at_morning(
         self, service: ContextualLHSCalculatorService, base_datetime: datetime
     ) -> None:
-        """Test extracting hour from cycle at 06:00."""
-        start = base_datetime.replace(hour=6)
+        """Test extracting hour from cycle ending at 06:00."""
+        end = base_datetime.replace(hour=6)
         cycle = self._create_cycle(
-            start_time=start,
-            end_time=start + timedelta(hours=1),
+            start_time=end - timedelta(hours=1),
+            end_time=end,
         )
 
         hour = service.extract_hour_from_cycle(cycle)
 
         assert hour == 6
+
+    def test_extract_hour_uses_end_time_for_preheat_cycle(
+        self, service: ContextualLHSCalculatorService, base_datetime: datetime
+    ) -> None:
+        """A preheat cycle for a 07:00 slot that starts at 05:30 is keyed by hour 7.
+
+        The lookup for the slot reads ``target_time.hour`` (7), so the cycle must be
+        filed under the hour its target was reached, not the hour it started (#183).
+        """
+        cycle = self._create_cycle(
+            start_time=base_datetime.replace(hour=5, minute=30),
+            end_time=base_datetime.replace(hour=7, minute=2),
+        )
+
+        hour = service.extract_hour_from_cycle(cycle)
+
+        assert hour == 7
 
     def test_extract_hour_at_evening(
         self, service: ContextualLHSCalculatorService, base_datetime: datetime
@@ -75,11 +92,11 @@ class TestContextualLHSCalculatorService:
 
         assert hour == 23
 
-    # ===== group_cycles_by_start_hour Tests =====
+    # ===== group_cycles_by_hour Tests =====
 
     def test_group_empty_cycles_list(self, service: ContextualLHSCalculatorService) -> None:
         """Test grouping empty cycles list."""
-        grouped = service.group_cycles_by_start_hour([])
+        grouped = service.group_cycles_by_hour([])
 
         assert len(grouped) == 24
         assert all(v == [] for v in grouped.values())
@@ -87,14 +104,14 @@ class TestContextualLHSCalculatorService:
     def test_group_single_cycle_at_hour_6(
         self, service: ContextualLHSCalculatorService, base_datetime: datetime
     ) -> None:
-        """Test grouping single cycle at hour 6."""
-        start = base_datetime.replace(hour=6)
+        """Test grouping single cycle ending at hour 6."""
+        end = base_datetime.replace(hour=6)
         cycle = self._create_cycle(
-            start_time=start,
-            end_time=start + timedelta(hours=1),
+            start_time=end - timedelta(hours=1),
+            end_time=end,
         )
 
-        grouped = service.group_cycles_by_start_hour([cycle])
+        grouped = service.group_cycles_by_hour([cycle])
 
         assert len(grouped[6]) == 1
         assert grouped[6][0] == cycle
@@ -125,12 +142,12 @@ class TestContextualLHSCalculatorService:
             ),
         ]
 
-        grouped = service.group_cycles_by_start_hour(cycles)
+        grouped = service.group_cycles_by_hour(cycles)
 
-        assert len(grouped[6]) == 2
-        assert len(grouped[12]) == 1
-        assert len(grouped[20]) == 1
-        assert len(grouped[0]) == 0
+        assert len(grouped[7]) == 2
+        assert len(grouped[13]) == 1
+        assert len(grouped[21]) == 1
+        assert len(grouped[6]) == 0
 
     # ===== calculate_contextual_lhs_for_hour Tests =====
 
@@ -182,10 +199,10 @@ class TestContextualLHSCalculatorService:
         self, service: ContextualLHSCalculatorService, base_datetime: datetime
     ) -> None:
         """Test calculating LHS with single cycle (average of 1 = value itself)."""
-        start = base_datetime.replace(hour=6)
+        end = base_datetime.replace(hour=6)
         cycle = self._create_cycle(
-            start_time=start,
-            end_time=start + timedelta(hours=1),
+            start_time=end - timedelta(hours=1),
+            end_time=end,
             start_temp=15.0,
             end_temp=18.0,
         )
@@ -217,7 +234,7 @@ class TestContextualLHSCalculatorService:
             end_temp=29.5,  # 14.5°C rise in 1h = 14.5°C/h
         )
 
-        result = service.calculate_contextual_lhs_for_hour([cycle1, cycle2], 6)
+        result = service.calculate_contextual_lhs_for_hour([cycle1, cycle2], 7)
 
         assert result is not None
         assert abs(result - 14.75) < 0.01
@@ -228,10 +245,10 @@ class TestContextualLHSCalculatorService:
         """Test calculating LHS with three cycles."""
         cycles = []
         for day in range(3):
-            start = (base_datetime - timedelta(days=day)).replace(hour=6)
+            end = (base_datetime - timedelta(days=day)).replace(hour=6)
             cycle = self._create_cycle(
-                start_time=start,
-                end_time=start + timedelta(hours=1),
+                start_time=end - timedelta(hours=1),
+                end_time=end,
                 start_temp=15.0,
                 end_temp=15.0 + (10 + day),  # vary the slope
             )
@@ -258,10 +275,10 @@ class TestContextualLHSCalculatorService:
         self, service: ContextualLHSCalculatorService, base_datetime: datetime
     ) -> None:
         """Test all hours calculated with cycles only at hour 6."""
-        start = base_datetime.replace(hour=6)
+        end = base_datetime.replace(hour=6)
         cycle = self._create_cycle(
-            start_time=start,
-            end_time=start + timedelta(hours=1),
+            start_time=end - timedelta(hours=1),
+            end_time=end,
             start_temp=15.0,
             end_temp=18.0,
         )
@@ -280,10 +297,10 @@ class TestContextualLHSCalculatorService:
         """Test all hours with cycles distributed."""
         cycles = []
         for hour in [0, 6, 12, 18]:
-            start = base_datetime.replace(hour=hour)
+            end = base_datetime.replace(hour=hour)
             cycle = self._create_cycle(
-                start_time=start,
-                end_time=start + timedelta(hours=1),
+                start_time=end - timedelta(hours=1),
+                end_time=end,
             )
             cycles.append(cycle)
 
@@ -321,7 +338,7 @@ class TestContextualLHSCalculatorService:
             ),
         ]
 
-        result = service.calculate_contextual_lhs_for_hour(cycles, 6)
+        result = service.calculate_contextual_lhs_for_hour(cycles, 7)
 
         # Only the positive cycle (3.0°C/h) should count
         assert result is not None
@@ -346,7 +363,7 @@ class TestContextualLHSCalculatorService:
             ),
         ]
 
-        result = service.calculate_contextual_lhs_for_hour(cycles, 6)
+        result = service.calculate_contextual_lhs_for_hour(cycles, 7)
 
         assert result is not None
         assert result == pytest.approx(3.0, abs=0.01)
@@ -370,7 +387,7 @@ class TestContextualLHSCalculatorService:
             ),
         ]
 
-        result = service.calculate_contextual_lhs_for_hour(cycles, 6)
+        result = service.calculate_contextual_lhs_for_hour(cycles, 7)
 
         assert result is None
 
@@ -396,3 +413,21 @@ class TestContextualLHSCalculatorService:
             dead_time_cycle_minutes=dead_time_cycle_minutes,
             tariff_details=None,
         )
+
+
+class TestContextualHourTimezone:
+    """Cycle times are naive UTC; slots are looked up in local time (#183)."""
+
+    def test_naive_utc_end_time_is_converted_to_local_hour(self) -> None:
+        """A cycle ending 05:00 UTC serves the 07:00 slot in UTC+2."""
+        service = ContextualLHSCalculatorService(local_tz=timezone(timedelta(hours=2)))
+        cycle = HeatingCycle(
+            device_id="test_device",
+            start_time=datetime(2025, 2, 9, 3, 30),
+            end_time=datetime(2025, 2, 9, 5, 0),
+            target_temp=20.0,
+            end_temp=20.0,
+            start_temp=17.0,
+        )
+
+        assert service.extract_hour_from_cycle(cycle) == 7

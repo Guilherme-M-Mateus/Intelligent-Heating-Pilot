@@ -110,6 +110,9 @@ class HeatingCycleLifecycleManager:
         self._extraction_queues: list[RecordingExtractionQueue] = []
         self._extraction_queue: RecordingExtractionQueue | None = None
         self._extraction_task: asyncio.Task | None = None
+        # Every per-range run_queue() task, including those detached by
+        # trigger_24h_refresh(), so cancel_extraction() can stop all of them.
+        self._range_tasks: set[asyncio.Task] = set()
 
     async def refresh_heating_cycle_cache(self) -> None:
         """Refresh the heating cycle cache and schedule the next 24h timer.
@@ -490,27 +493,7 @@ class HeatingCycleLifecycleManager:
         """
         _LOGGER.debug("Entering HeatingCycleLifecycleManager.cancel")
 
-        # Cancel all active extraction queues
-        queues_to_cancel = self._extraction_queues or (
-            [self._extraction_queue] if self._extraction_queue is not None else []
-        )
-        for queue in queues_to_cancel:
-            _LOGGER.info("Cancelling extraction queue during shutdown")
-            try:
-                await queue.cancel_queue()
-            except Exception as exc:
-                _LOGGER.warning("Error cancelling extraction queue: %s", exc)
-
-        # Cancel extraction task
-        if self._extraction_task is not None:
-            _LOGGER.info("Cancelling extraction task")
-            self._extraction_task.cancel()
-            try:
-                await self._extraction_task
-            except asyncio.CancelledError:
-                pass
-            except Exception as exc:
-                _LOGGER.warning("Error awaiting cancelled task: %s", exc)
+        await self.cancel_extraction()
 
         # Cancel timer if scheduled
         if self._timer_cancel_func is not None:
@@ -523,6 +506,45 @@ class HeatingCycleLifecycleManager:
                 self._timer_cancel_func = None
 
         _LOGGER.debug("Exiting HeatingCycleLifecycleManager.cancel")
+
+    async def cancel_extraction(self) -> None:
+        """Stop every running extraction and wait until it has stopped.
+
+        Used on shutdown and before a learning reset. On reset, an extraction
+        still in flight would write cycles, LHS and dead time back right after
+        the storage was cleared. Tasks are awaited so that no extraction
+        callback can run once this method returns. The 24h timer is kept.
+        """
+        _LOGGER.debug("Entering HeatingCycleLifecycleManager.cancel_extraction")
+
+        queues_to_cancel = self._extraction_queues or (
+            [self._extraction_queue] if self._extraction_queue is not None else []
+        )
+        for queue in queues_to_cancel:
+            _LOGGER.info("Cancelling extraction queue for device=%s", self._device_config.device_id)
+            try:
+                await queue.cancel_queue()
+            except Exception as exc:
+                _LOGGER.warning("Error cancelling extraction queue: %s", exc)
+        self._extraction_queues = []
+        self._extraction_queue = None
+
+        tasks = [*self._range_tasks]
+        if self._extraction_task is not None:
+            tasks.append(self._extraction_task)
+        for task in tasks:
+            task.cancel()
+        for task in tasks:
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            except Exception as exc:
+                _LOGGER.warning("Error awaiting cancelled extraction task: %s", exc)
+        self._range_tasks.clear()
+        self._extraction_task = None
+
+        _LOGGER.debug("Exiting HeatingCycleLifecycleManager.cancel_extraction")
 
     async def _launch_extraction_queue(self) -> None:
         """Launch the asynchronous recording extraction queue for the startup window.
@@ -724,6 +746,8 @@ class HeatingCycleLifecycleManager:
                     await self._extraction_task
 
             self._extraction_task = asyncio.create_task(self._extraction_queue.run_queue())
+            self._range_tasks.add(self._extraction_task)
+            self._extraction_task.add_done_callback(self._range_tasks.discard)
 
             _LOGGER.info("24h refresh extraction queue launched")
 
@@ -983,6 +1007,9 @@ class HeatingCycleLifecycleManager:
         # Create individual tasks so each run_queue() is directly scheduled on the
         # event loop (ensures _is_running is set after a single asyncio.sleep(0) yield).
         range_tasks = [asyncio.create_task(coro) for coro in run_coroutines]
+        for range_task in range_tasks:
+            self._range_tasks.add(range_task)
+            range_task.add_done_callback(self._range_tasks.discard)
 
         # _extraction_task tracks the combined completion of all range tasks.
         async def _wait_all_ranges(tasks: list[asyncio.Task]) -> None:
@@ -1346,35 +1373,6 @@ class HeatingCycleLifecycleManager:
             return False
         _LOGGER.debug("Exiting HeatingCycleLifecycleManager.can_cancel_extraction")
         return True
-
-    async def cancel_extraction(self) -> None:
-        """Cancel an ongoing incremental extraction gracefully.
-
-        If an extraction is running via RecordingExtractionQueue, this method
-        requests cancellation. The queue will finish the current day's extraction
-        and then stop without processing remaining days.
-
-        Has no effect if no extraction is currently running.
-
-        Returns:
-            None
-        """
-        _LOGGER.debug("Entering HeatingCycleLifecycleManager.cancel_extraction")
-        queues_to_cancel = self._extraction_queues or (
-            [self._extraction_queue] if self._extraction_queue is not None else []
-        )
-        if queues_to_cancel:
-            _LOGGER.info(
-                "Cancelling ongoing incremental extraction (%d queue(s))", len(queues_to_cancel)
-            )
-            for queue in queues_to_cancel:
-                try:
-                    await queue.cancel_queue()
-                except Exception as exc:
-                    _LOGGER.warning("Error requesting extraction queue cancellation: %s", exc)
-        else:
-            _LOGGER.debug("No extraction queue to cancel")
-        _LOGGER.debug("Exiting HeatingCycleLifecycleManager.cancel_extraction")
 
     async def on_demand_extraction(
         self,

@@ -48,7 +48,7 @@ IHP uses two complementary approaches:
 - Used as a fallback when no contextual data is available
 - Represents your system's "typical" heating performance
 
-**Contextual LHS** — Per-hour-of-day averages (e.g., cycles starting at 6am average separately from 9pm)
+**Contextual LHS** — Per-hour-of-day averages (e.g., cycles that reach their target around 7am average separately from those around 9pm, so a 7am slot uses what IHP learned preheating for it)
 - More accurate because heating behavior varies by time (thermal mass, occupancy patterns, outdoor conditions)
 - IHP uses contextual LHS when available for the current hour, falls back to global LHS if insufficient data
 
