@@ -13,6 +13,9 @@ from custom_components.intelligent_heating_pilot.domain.value_objects.historical
     HistoricalMeasurement,
 )
 
+# Cycle length that leaves the 180-min dead-time cap as the only limit on the search.
+LONG_CYCLE = timedelta(hours=4)
+
 
 def m(
     timestamp: datetime, value: float | str | bool, device_id: str = "test.device"
@@ -539,6 +542,7 @@ class TestCalculateDeadTimeCycle:
 
         result = service._calculate_dead_time_cycle(
             start_time=start_time,
+            end_time=start_time + LONG_CYCLE,
             start_temp=start_temp,
             history_data_set=dataset,
             temp_change_threshold=0.1,
@@ -571,6 +575,7 @@ class TestCalculateDeadTimeCycle:
 
         result = service._calculate_dead_time_cycle(
             start_time=start_time,
+            end_time=start_time + LONG_CYCLE,
             start_temp=start_temp,
             history_data_set=dataset,
             temp_change_threshold=0.1,
@@ -603,6 +608,7 @@ class TestCalculateDeadTimeCycle:
 
         result = service._calculate_dead_time_cycle(
             start_time=start_time,
+            end_time=start_time + LONG_CYCLE,
             start_temp=start_temp,
             history_data_set=dataset,
             temp_change_threshold=0.1,
@@ -629,6 +635,7 @@ class TestCalculateDeadTimeCycle:
 
         result = service._calculate_dead_time_cycle(
             start_time=start_time,
+            end_time=start_time + LONG_CYCLE,
             start_temp=start_temp,
             history_data_set=dataset,
             temp_change_threshold=0.1,
@@ -668,6 +675,7 @@ class TestCalculateDeadTimeCycle:
 
         result = service._calculate_dead_time_cycle(
             start_time=start_time,
+            end_time=start_time + LONG_CYCLE,
             start_temp=start_temp,
             history_data_set=dataset,
             temp_change_threshold=threshold,
@@ -706,6 +714,7 @@ class TestCalculateDeadTimeCycle:
 
         result = service._calculate_dead_time_cycle(
             start_time=start_time,
+            end_time=start_time + LONG_CYCLE,
             start_temp=start_temp,
             history_data_set=dataset,
             temp_change_threshold=0.1,
@@ -742,6 +751,7 @@ class TestCalculateDeadTimeCycle:
 
         result = service._calculate_dead_time_cycle(
             start_time=start_time,
+            end_time=start_time + LONG_CYCLE,
             start_temp=start_temp,
             history_data_set=dataset,
             temp_change_threshold=0.1,
@@ -776,6 +786,7 @@ class TestCalculateDeadTimeCycle:
 
         result = service._calculate_dead_time_cycle(
             start_time=start_time,
+            end_time=start_time + LONG_CYCLE,
             start_temp=start_temp,
             history_data_set=dataset,
             temp_change_threshold=0.1,
@@ -809,6 +820,7 @@ class TestCalculateDeadTimeCycle:
 
         result = service._calculate_dead_time_cycle(
             start_time=start_time,
+            end_time=start_time + LONG_CYCLE,
             start_temp=start_temp,
             history_data_set=dataset,
             temp_change_threshold=0.1,
@@ -843,6 +855,7 @@ class TestCalculateDeadTimeCycle:
 
         result = service._calculate_dead_time_cycle(
             start_time=start_time,
+            end_time=start_time + LONG_CYCLE,
             start_temp=start_temp,
             history_data_set=dataset,
         )
@@ -873,9 +886,66 @@ class TestCalculateDeadTimeCycle:
 
         result = service._calculate_dead_time_cycle(
             start_time=start_time,
+            end_time=start_time + LONG_CYCLE,
             start_temp=start_temp,
             history_data_set=dataset,
         )
 
         # 190 minutes exceeds the 180-min cap — must be rejected
         assert result is None, "Dead time of 190 min should be rejected (exceeds 180-min cap)"
+
+    def test_calculate_dead_time_cycle_ignores_rise_after_cycle_end(self, service, base_time):
+        """A rise from a later heating episode must not count as this cycle's dead time.
+
+        GIVEN: A 10-min cycle with no rise inside it, then a rise 120 min after start
+        WHEN: _calculate_dead_time_cycle() called with the cycle end_time
+        THEN: Should return None (issue #185: previously returned ~120 minutes)
+        """
+        start_time = base_time
+        start_temp = 18.0
+
+        data = {
+            HistoricalDataKey.INDOOR_TEMP: [
+                m(start_time, start_temp),
+                m(start_time + timedelta(minutes=5), 18.05),
+                m(start_time + timedelta(minutes=120), 18.5),  # Later heating episode
+            ]
+        }
+        dataset = HistoricalDataSet(data)
+
+        result = service._calculate_dead_time_cycle(
+            start_time=start_time,
+            end_time=start_time + timedelta(minutes=10),
+            start_temp=start_temp,
+            history_data_set=dataset,
+        )
+
+        assert result is None, "Rise after cycle end must not be attributed to this cycle"
+
+    def test_calculate_dead_time_cycle_accepts_rise_at_cycle_end(self, service, base_time):
+        """A rise measured exactly at the cycle end still belongs to the cycle.
+
+        GIVEN: A 10-min cycle whose only rise is measured at end_time
+        WHEN: _calculate_dead_time_cycle() called
+        THEN: Should return 10 minutes (end bound is inclusive)
+        """
+        start_time = base_time
+        start_temp = 18.0
+        end_time = start_time + timedelta(minutes=10)
+
+        data = {
+            HistoricalDataKey.INDOOR_TEMP: [
+                m(start_time, start_temp),
+                m(end_time, 18.3),
+            ]
+        }
+        dataset = HistoricalDataSet(data)
+
+        result = service._calculate_dead_time_cycle(
+            start_time=start_time,
+            end_time=end_time,
+            start_temp=start_temp,
+            history_data_set=dataset,
+        )
+
+        assert result == pytest.approx(10.0, abs=0.1)
