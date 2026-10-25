@@ -230,7 +230,7 @@ Examples:
 - Outdoor temp -10°C: factor = 2.5 (heat 2.5× longer)
 ```
 
-> **Note:** This adjustment is only applied when an outdoor temperature is available. An outdoor temperature sensor cannot be configured yet, so it is currently skipped.
+> **Note:** This adjustment is only applied when an outdoor temperature source (a sensor or a `weather.*` entity) is configured. Without one, it is skipped.
 
 #### 2. **Humidity Effect**
 

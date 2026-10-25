@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, State
 from homeassistant.util import dt as dt_util
 
 from ...domain.interfaces import IEnvironmentReader
@@ -18,9 +18,9 @@ from ..vtherm_compat import get_vtherm_attribute
 from .utils import (
     WEATHER_ATTR_CLOUD_COVERAGE,
     WEATHER_ATTR_HUMIDITY,
-    WEATHER_ATTR_TEMPERATURE,
     get_entity_name,
     read_numeric_state,
+    read_temperature_celsius,
 )
 
 if TYPE_CHECKING:
@@ -90,10 +90,11 @@ class HAEnvironmentReader(IEnvironmentReader):
         # Outdoor temperature is optional: a missing value stays None so the domain
         # skips the outdoor correction. Substituting the indoor temperature made it
         # apply a 10-20% correction computed from the wrong quantity.
-        outdoor_temp = self._get_float_state(self._outdoor_temp_entity_id, WEATHER_ATTR_TEMPERATURE)
+        outdoor_temp_state = self._get_state(self._outdoor_temp_entity_id)
+        outdoor_temp = read_temperature_celsius(outdoor_temp_state) if outdoor_temp_state else None
 
         # Get humidity (required for EnvironmentState)
-        humidity = self._get_float_state(self._humidity_in_entity_id)
+        humidity = self._get_float_state(self._humidity_in_entity_id, WEATHER_ATTR_HUMIDITY)
         if humidity is None:
             # Default fallback humidity
             humidity = 50.0
@@ -116,9 +117,7 @@ class HAEnvironmentReader(IEnvironmentReader):
             cloud_coverage=cloud_coverage,
         )
 
-    def _get_float_state(
-        self, entity_id: str | None, weather_attribute: str = WEATHER_ATTR_TEMPERATURE
-    ) -> float | None:
+    def _get_float_state(self, entity_id: str | None, weather_attribute: str) -> float | None:
         """Safely get float value from entity state.
 
         Args:
@@ -128,11 +127,11 @@ class HAEnvironmentReader(IEnvironmentReader):
         Returns:
             Float value or None
         """
+        state = self._get_state(entity_id)
+        return read_numeric_state(state, weather_attribute) if state else None
+
+    def _get_state(self, entity_id: str | None) -> State | None:
+        """Return the entity state, or None when unset or missing."""
         if not entity_id:
             return None
-
-        state = self._hass.states.get(entity_id)
-        if not state:
-            return None
-
-        return read_numeric_state(state, weather_attribute)
+        return self._hass.states.get(entity_id)

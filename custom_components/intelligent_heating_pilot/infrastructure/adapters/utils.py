@@ -2,11 +2,18 @@
 
 from __future__ import annotations
 
+import logging
 from typing import cast
 
+from homeassistant.const import ATTR_UNIT_OF_MEASUREMENT, UnitOfTemperature
 from homeassistant.core import HomeAssistant, State
+from homeassistant.exceptions import HomeAssistantError
+from homeassistant.util.unit_conversion import TemperatureConverter
+
+_LOGGER = logging.getLogger(__name__)
 
 WEATHER_DOMAIN = "weather"
+WEATHER_ATTR_TEMPERATURE_UNIT = "temperature_unit"
 # Numeric attributes exposed by weather entities, whose state is a condition string.
 WEATHER_ATTR_TEMPERATURE = "temperature"
 WEATHER_ATTR_HUMIDITY = "humidity"
@@ -52,4 +59,33 @@ def read_numeric_state(state: State, weather_attribute: str) -> float | None:
     try:
         return float(raw)
     except (ValueError, TypeError):
+        return None
+
+
+def read_temperature_celsius(state: State) -> float | None:
+    """Read a temperature from a sensor or weather entity, converted to Celsius.
+
+    The domain works in Celsius, but HA reports temperatures in the entity's own
+    unit (``unit_of_measurement`` for a sensor, ``temperature_unit`` for a weather
+    entity). A missing unit is assumed to already be Celsius.
+
+    Args:
+        state: Home Assistant state of the source entity
+
+    Returns:
+        Temperature in Celsius, or None if missing, not numeric or in an unknown unit
+    """
+    value = read_numeric_state(state, WEATHER_ATTR_TEMPERATURE)
+    unit_attribute = (
+        WEATHER_ATTR_TEMPERATURE_UNIT
+        if state.domain == WEATHER_DOMAIN
+        else ATTR_UNIT_OF_MEASUREMENT
+    )
+    unit = state.attributes.get(unit_attribute)
+    if value is None or not unit or unit == UnitOfTemperature.CELSIUS:
+        return value
+    try:
+        return float(TemperatureConverter.convert(value, unit, UnitOfTemperature.CELSIUS))
+    except HomeAssistantError:
+        _LOGGER.warning("Unsupported temperature unit %s for %s", unit, state.entity_id)
         return None
