@@ -171,12 +171,12 @@ class TestContextualLHSIntegration:
         # Create cycles only for hour 6, none for hour 12
         cycles = [
             self._create_cycle(
-                start_time=base_datetime.replace(hour=6, minute=0),
+                start_time=base_datetime.replace(hour=5, minute=0),
                 start_temp=18.0,
                 end_temp=20.0,
             ),
             self._create_cycle(
-                start_time=base_datetime.replace(hour=6, minute=30),
+                start_time=base_datetime.replace(hour=5, minute=30),
                 start_temp=18.0,
                 end_temp=20.0,
             ),
@@ -257,12 +257,12 @@ class TestContextualLHSIntegration:
         # Initial extraction with 2 cycles
         cycles_initial = [
             self._create_cycle(
-                start_time=base_datetime.replace(hour=6, minute=0),
+                start_time=base_datetime.replace(hour=5, minute=0),
                 start_temp=18.0,
                 end_temp=20.0,  # 2°C/h
             ),
             self._create_cycle(
-                start_time=base_datetime.replace(hour=6, minute=30),
+                start_time=base_datetime.replace(hour=5, minute=30),
                 start_temp=18.0,
                 end_temp=21.0,  # 3°C/h (assuming shorter duration)
                 duration_hours=1.0,
@@ -274,7 +274,7 @@ class TestContextualLHSIntegration:
 
         # Then add third cycle and recalculate
         cycle3 = self._create_cycle(
-            start_time=base_datetime.replace(day=10, hour=6, minute=15),
+            start_time=base_datetime.replace(day=10, hour=5, minute=15),
             start_temp=18.0,
             end_temp=22.0,  # 4°C/h
             duration_hours=1.0,
@@ -302,9 +302,8 @@ class TestContextualLHSIntegration:
             cycle ends: 2025-02-10 00:30:00
 
         Expected:
-            Grouped only by START hour (23), not end hour
-
-        RED: Grouping should use start_time.hour, not end_time.hour.
+            Grouped only by END hour (0), not start hour: the target was
+            reached during hour 0, which is what a 00:xx slot looks up.
         """
         cycle = HeatingCycle(
             device_id="climate.test",
@@ -317,26 +316,26 @@ class TestContextualLHSIntegration:
 
         contextual_result = contextual_service.calculate_all_contextual_lhs([cycle])
 
-        # Should be grouped in hour 23 (start hour), not hour 0
-        assert contextual_result[23] is not None
-        assert contextual_result[0] is None
+        # Should be grouped in hour 0 (end hour), not hour 23
+        assert contextual_result[0] is not None
+        assert contextual_result[23] is None
 
     def test_multiple_cycles_hour_23_grouped_correctly(
         self,
         contextual_service: ContextualLHSCalculatorService,
         base_datetime: datetime,
     ) -> None:
-        """Test multiple cycles all starting at hour 23 are grouped correctly.
+        """Test multiple cycles all ending at hour 23 are grouped correctly.
 
-        RED: All cycles with start_hour=23, regardless of when they end.
+        All cycles with end_hour=23, regardless of when they started.
         """
         cycle1 = self._create_cycle(
-            start_time=base_datetime.replace(hour=23, minute=0),
+            start_time=base_datetime.replace(hour=22, minute=0),
             start_temp=18.0,
             end_temp=20.0,
         )
         cycle2 = self._create_cycle(
-            start_time=base_datetime.replace(day=7, hour=23, minute=30),
+            start_time=base_datetime.replace(day=7, hour=22, minute=30),
             start_temp=18.0,
             end_temp=21.0,
         )
@@ -362,7 +361,7 @@ class TestContextualLHSIntegration:
         """
         cycles = [
             self._create_cycle(
-                start_time=base_datetime.replace(hour=6, minute=0),
+                start_time=base_datetime.replace(hour=5, minute=0),
                 start_temp=18.0,
                 end_temp=20.0,
             ),
@@ -409,17 +408,17 @@ class TestContextualLHSIntegration:
         # Create cycles: 2 at hour 6, 1 at hour 12
         cycles = [
             self._create_cycle(
-                start_time=base_datetime.replace(hour=6, minute=0),
+                start_time=base_datetime.replace(hour=5, minute=0),
                 start_temp=18.0,
                 end_temp=20.0,  # 2°C/h (via avg_heating_slope)
             ),
             self._create_cycle(
-                start_time=base_datetime.replace(day=7, hour=6, minute=0),
+                start_time=base_datetime.replace(day=7, hour=5, minute=0),
                 start_temp=18.0,
                 end_temp=20.0,  # 2°C/h
             ),
             self._create_cycle(
-                start_time=base_datetime.replace(day=8, hour=12, minute=0),
+                start_time=base_datetime.replace(day=8, hour=11, minute=0),
                 start_temp=18.0,
                 end_temp=19.0,  # 1°C/h
             ),
@@ -451,12 +450,12 @@ class TestContextualLHSIntegration:
         """
         # Create cycles: one at hour 6, one at hour 7
         cycle_h6 = self._create_cycle(
-            start_time=base_datetime.replace(hour=6, minute=0),
+            start_time=base_datetime.replace(hour=5, minute=0),
             start_temp=18.0,
             end_temp=20.0,  # 2°C/h
         )
         cycle_h7 = self._create_cycle(
-            start_time=base_datetime.replace(day=7, hour=7, minute=0),
+            start_time=base_datetime.replace(day=7, hour=6, minute=0),
             start_temp=18.0,
             end_temp=23.0,  # 5°C/h
         )
@@ -505,12 +504,12 @@ class TestContextualLHSIntegration:
         # Step 1: Extract cycles
         cycles = [
             self._create_cycle(
-                start_time=base_datetime.replace(hour=6, minute=0),
+                start_time=base_datetime.replace(hour=5, minute=0),
                 start_temp=18.0,
                 end_temp=20.0,
             ),
             self._create_cycle(
-                start_time=base_datetime.replace(hour=6, minute=30),
+                start_time=base_datetime.replace(hour=5, minute=30),
                 start_temp=18.0,
                 end_temp=21.0,
             ),
