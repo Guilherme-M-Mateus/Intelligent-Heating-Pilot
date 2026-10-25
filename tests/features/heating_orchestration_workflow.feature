@@ -73,6 +73,35 @@ Feature: Heating Orchestration Workflow
     And a preheating timer should be scheduled for 05:30
 
   # ===================================================================
+  # NO FLAPPING — An active preheat must not bounce before its slot (#182)
+  # ===================================================================
+
+  Scenario: Target reached early keeps active preheating until the slot
+    Given the orchestrator is configured with all use cases
+    And preheating is currently active for target time 07:00
+    And the next timeslot is at 07:00 with target temperature 21°C
+    And anticipation calculation returns 0 minutes of anticipation
+    When the orchestrator calculates and schedules anticipation
+    Then preheating should continue without interruption
+    And preheating should still be active
+
+  Scenario: Indoor temperature unavailable keeps active preheating
+    Given the orchestrator is configured with all use cases
+    And preheating is currently active for target time 07:00
+    And the indoor temperature is unavailable
+    When the orchestrator calculates and schedules anticipation
+    Then preheating should continue without interruption
+    And preheating should still be active
+
+  Scenario: Postponed start still in the past does not revert preheating
+    Given the orchestrator is configured with all use cases
+    And preheating is currently active for target time 07:00
+    And the anticipated start time moves later but stays in the past
+    When the orchestrator calculates and schedules anticipation
+    Then preheating should continue without interruption
+    And preheating should still be active
+
+  # ===================================================================
   # IHP ENABLED / DISABLED — Switch controls preheating behavior
   # ===================================================================
 
@@ -131,3 +160,13 @@ Feature: Heating Orchestration Workflow
     When the orchestrator checks for overshoot risk
     Then no cancel action should be triggered
     And the system should remain in idle state
+
+  Scenario: Preheating canceled for overshoot is not restarted before its slot
+    Given the orchestrator is configured with all use cases
+    And preheating is currently active for target time 07:00
+    And overshoot risk is detected by the overshoot use case
+    And the anticipated start for the 07:30 slot is already in the past
+    When the orchestrator checks for overshoot risk
+    And the orchestrator calculates and schedules anticipation
+    Then preheating should be canceled due to overshoot
+    And preheating should not be restarted
