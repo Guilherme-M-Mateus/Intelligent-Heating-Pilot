@@ -534,6 +534,7 @@ class HeatingCycleService(IHeatingCycleService):
                 target_temp,
                 history_data_set,
                 split_duration_minutes,
+                dead_time_cycle_minutes,
             )
 
         return [cycle]
@@ -548,8 +549,14 @@ class HeatingCycleService(IHeatingCycleService):
         target_temp: float,
         history_data_set: HistoricalDataSet,
         split_duration_minutes: int = 0,
+        parent_dead_time_minutes: float | None = None,
     ) -> list[HeatingCycle]:
-        """Splits a long heating cycle into smaller sub-cycles and returns them."""
+        """Splits a long heating cycle into smaller sub-cycles and returns them.
+
+        The parent cycle's dead time is given to the first sub-cycle only. It was
+        searched up to the parent end: the first rise may come after the first
+        sub-cycle ends but still belongs to this heating cycle.
+        """
         if split_duration_minutes <= 0:  # No splitting
             return []
 
@@ -588,17 +595,7 @@ class HeatingCycleService(IHeatingCycleService):
                 temp_per_minute * split_duration_minutes
             )
 
-            # Calculate dead_time_cycle only for the first sub-cycle. The search is
-            # bounded by the parent cycle end: the first rise may come after the first
-            # sub-cycle ends but still belongs to this heating cycle.
-            dead_time_cycle_minutes = None
-            if i == 0:
-                dead_time_cycle_minutes = self._calculate_dead_time_cycle(
-                    start_time=current_sub_cycle_start_time,
-                    end_time=end_time,
-                    start_temp=current_sub_cycle_start_temp,
-                    history_data_set=history_data_set,
-                )
+            dead_time_cycle_minutes = parent_dead_time_minutes if i == 0 else None
 
             sub_cycle = HeatingCycle(
                 device_id=device_id,
