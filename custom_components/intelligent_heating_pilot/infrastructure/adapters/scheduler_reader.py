@@ -105,9 +105,7 @@ class HASchedulerReader(ISchedulerReader):
                 # Skip disabled HACS schedulers (state is "off")
                 if state.state == "off":
                     device_name = get_entity_name(self._hass, entity_id)
-                    _LOGGER.debug(
-                        "[%s] Scheduler is disabled (state: off), skipping", device_name
-                    )
+                    _LOGGER.debug("[%s] Scheduler is disabled (state: off), skipping", device_name)
                     continue
 
                 # Extract next trigger time and target temperature (HACS format)
@@ -369,7 +367,8 @@ class HASchedulerReader(ISchedulerReader):
         if isinstance(value, datetime):
             # Already a datetime - ensure timezone is set
             if value.tzinfo is None:
-                return dt_util.as_local(value)
+                localized: datetime = dt_util.as_local(value)
+                return localized
             return value
 
         # Try string parsing using existing method

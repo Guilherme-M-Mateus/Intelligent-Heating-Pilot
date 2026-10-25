@@ -442,7 +442,7 @@ class HAClimateDataReader(IClimateDataReader, IHistoricalDataAdapter):
             Parsed datetime object
         """
         # Home Assistant provides ISO format string timestamps
-        timestamp_str = record.get("last_changed", record.get("last_updated"))
+        timestamp_str = record.get("last_updated", record.get("last_changed"))
 
         if isinstance(timestamp_str, str):
             # Parse ISO format string (e.g., "2024-01-15T12:00:00+00:00")
