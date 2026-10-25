@@ -11,10 +11,11 @@ import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
+from homeassistant.core import Event, EventStateChangedData, HomeAssistant, State, callback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.util import dt as dt_util
 
+from .adapters.utils import WEATHER_DOMAIN, WEATHER_NUMERIC_ATTRIBUTES
 from .vtherm_compat import get_vtherm_attribute
 
 if TYPE_CHECKING:
@@ -240,6 +241,9 @@ class HAEventBridge:
         if old_unavailable and new_unavailable:
             return False
 
+        if new_state.domain == WEATHER_DOMAIN:
+            return self._has_meaningful_weather_change(old_state, new_state)
+
         try:
             old_val = float(str(old_state.state))
             new_val = float(str(new_state.state))
@@ -247,6 +251,31 @@ class HAEventBridge:
         except (TypeError, ValueError):
             # Non-numeric state: trigger on any state string change
             return bool(old_state.state != new_state.state)
+
+    @staticmethod
+    def _has_meaningful_weather_change(old_state: State, new_state: State) -> bool:
+        """Return True when a weather entity's numeric attributes moved significantly.
+
+        A weather state is a condition string, so a temperature, humidity or cloud
+        coverage swing leaves the state untouched and must be read from attributes.
+        """
+        if old_state.state != new_state.state:
+            return True
+
+        for attribute in WEATHER_NUMERIC_ATTRIBUTES:
+            old_val = old_state.attributes.get(attribute)
+            new_val = new_state.attributes.get(attribute)
+            # Attribute appearing or disappearing is actionable
+            if old_val is None or new_val is None:
+                if old_val is not new_val:
+                    return True
+                continue
+            try:
+                if abs(float(new_val) - float(old_val)) >= _MONITORED_ENTITY_CHANGE_THRESHOLD:
+                    return True
+            except (TypeError, ValueError):
+                continue  # Non-numeric junk is not actionable
+        return False
 
     def _is_meaningful_change_from_last(self, new_data: dict) -> bool:
         """Return True when *new_data* differs meaningfully from the last published event.

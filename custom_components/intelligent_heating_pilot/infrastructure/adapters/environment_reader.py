@@ -15,7 +15,13 @@ from homeassistant.util import dt as dt_util
 from ...domain.interfaces import IEnvironmentReader
 from ...domain.value_objects import EnvironmentState
 from ..vtherm_compat import get_vtherm_attribute
-from .utils import get_entity_name
+from .utils import (
+    WEATHER_ATTR_CLOUD_COVERAGE,
+    WEATHER_ATTR_HUMIDITY,
+    WEATHER_ATTR_TEMPERATURE,
+    get_entity_name,
+    read_numeric_state,
+)
 
 if TYPE_CHECKING:
     pass
@@ -44,10 +50,10 @@ class HAEnvironmentReader(IEnvironmentReader):
         Args:
             hass: Home Assistant instance
             vtherm_entity_id: VTherm climate entity ID
-            outdoor_temp_entity_id: Outdoor temperature sensor (optional)
+            outdoor_temp_entity_id: Outdoor temperature sensor or weather entity (optional)
             humidity_in_entity_id: Indoor humidity sensor (optional)
-            humidity_out_entity_id: Outdoor humidity sensor (optional)
-            cloud_cover_entity_id: Cloud coverage sensor (optional)
+            humidity_out_entity_id: Outdoor humidity sensor or weather entity (optional)
+            cloud_cover_entity_id: Cloud coverage sensor or weather entity (optional)
         """
         self._hass = hass
         self._vtherm_entity_id = vtherm_entity_id
@@ -84,7 +90,7 @@ class HAEnvironmentReader(IEnvironmentReader):
         # Outdoor temperature is optional: a missing value stays None so the domain
         # skips the outdoor correction. Substituting the indoor temperature made it
         # apply a 10-20% correction computed from the wrong quantity.
-        outdoor_temp = self._get_float_state(self._outdoor_temp_entity_id)
+        outdoor_temp = self._get_float_state(self._outdoor_temp_entity_id, WEATHER_ATTR_TEMPERATURE)
 
         # Get humidity (required for EnvironmentState)
         humidity = self._get_float_state(self._humidity_in_entity_id)
@@ -94,8 +100,12 @@ class HAEnvironmentReader(IEnvironmentReader):
             _LOGGER.debug("No indoor humidity available, using default 50%%")
 
         # Optional sensors
-        outdoor_humidity = self._get_float_state(self._humidity_out_entity_id)
-        cloud_coverage = self._get_float_state(self._cloud_cover_entity_id)
+        outdoor_humidity = self._get_float_state(
+            self._humidity_out_entity_id, WEATHER_ATTR_HUMIDITY
+        )
+        cloud_coverage = self._get_float_state(
+            self._cloud_cover_entity_id, WEATHER_ATTR_CLOUD_COVERAGE
+        )
 
         return EnvironmentState(
             indoor_temperature=current_temp,
@@ -106,11 +116,14 @@ class HAEnvironmentReader(IEnvironmentReader):
             cloud_coverage=cloud_coverage,
         )
 
-    def _get_float_state(self, entity_id: str | None) -> float | None:
+    def _get_float_state(
+        self, entity_id: str | None, weather_attribute: str = WEATHER_ATTR_TEMPERATURE
+    ) -> float | None:
         """Safely get float value from entity state.
 
         Args:
             entity_id: Entity ID to read
+            weather_attribute: Attribute to read if the entity is a weather entity
 
         Returns:
             Float value or None
@@ -122,7 +135,4 @@ class HAEnvironmentReader(IEnvironmentReader):
         if not state:
             return None
 
-        try:
-            return float(state.state)
-        except (ValueError, TypeError):
-            return None
+        return read_numeric_state(state, weather_attribute)

@@ -176,3 +176,65 @@ async def test_get_current_environment_reads_optional_sensors(mock_hass: Mock) -
     assert result.outdoor_humidity == 70.0
     assert result.cloud_coverage == 25.0
     assert result.timestamp == fixed_now
+
+
+def _weather_state(condition: str, attributes: dict) -> Mock:
+    state = _make_state(condition, attributes)
+    state.domain = "weather"
+    return state
+
+
+@pytest.mark.asyncio
+async def test_weather_entity_attributes_feed_outdoor_values(mock_hass: Mock) -> None:
+    """Weather entities expose outdoor values through attributes, not the state."""
+    states = {
+        "climate.vtherm": _make_state("heat", {"current_temperature": 19.0}),
+        "weather.home": _weather_state(
+            "cloudy", {"temperature": 7.5, "humidity": 80, "cloud_coverage": 90}
+        ),
+    }
+    mock_hass.states.get.side_effect = states.get
+
+    with patch(
+        "custom_components.intelligent_heating_pilot.infrastructure.adapters.environment_reader.get_entity_name",
+        return_value="Living Room",
+    ):
+        reader = HAEnvironmentReader(
+            mock_hass,
+            "climate.vtherm",
+            outdoor_temp_entity_id="weather.home",
+            humidity_out_entity_id="weather.home",
+            cloud_cover_entity_id="weather.home",
+        )
+        result = await reader.get_current_environment()
+
+    assert result is not None
+    assert result.outdoor_temp == 7.5
+    assert result.outdoor_humidity == 80.0
+    assert result.cloud_coverage == 90.0
+
+
+@pytest.mark.asyncio
+async def test_weather_entity_without_attribute_yields_none(mock_hass: Mock) -> None:
+    """A weather entity lacking the attribute gives None instead of failing."""
+    states = {
+        "climate.vtherm": _make_state("heat", {"current_temperature": 19.0}),
+        "weather.home": _weather_state("cloudy", {"temperature": 7.5}),
+    }
+    mock_hass.states.get.side_effect = states.get
+
+    with patch(
+        "custom_components.intelligent_heating_pilot.infrastructure.adapters.environment_reader.get_entity_name",
+        return_value="Living Room",
+    ):
+        reader = HAEnvironmentReader(
+            mock_hass,
+            "climate.vtherm",
+            outdoor_temp_entity_id="weather.home",
+            cloud_cover_entity_id="weather.home",
+        )
+        result = await reader.get_current_environment()
+
+    assert result is not None
+    assert result.outdoor_temp == 7.5
+    assert result.cloud_coverage is None

@@ -227,6 +227,8 @@ class HAWeatherDataReader(IHistoricalDataAdapter):
             start_time,
             end_time,
             entity_ids=[entity_id],
+            # weather is not a significant domain: attribute-only updates would be dropped
+            significant_changes_only=False,
         )
 
         # Serialize recorder access via shared FIFO queue (MANDATORY)

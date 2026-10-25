@@ -46,6 +46,21 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 
+def _outdoor_source_selector(device_class: str | None = None) -> selector.EntitySelector:
+    """Build a selector accepting a sensor or a weather entity.
+
+    Weather entities expose temperature, humidity and cloud coverage as attributes,
+    so they are valid outdoor sources alongside dedicated sensors.
+    """
+    sensor_filter = selector.EntityFilterSelectorConfig(domain="sensor")
+    if device_class:
+        sensor_filter["device_class"] = device_class
+    weather_filter = selector.EntityFilterSelectorConfig(domain="weather")
+    return selector.EntitySelector(
+        selector.EntitySelectorConfig(filter=[sensor_filter, weather_filter])
+    )
+
+
 class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):  # type: ignore[call-arg]
     """Handle a config flow for Intelligent Heating Pilot."""
 
@@ -146,15 +161,9 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                 vol.Optional(CONF_HUMIDITY_IN_ENTITY): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="sensor", device_class="humidity")
                 ),
-                vol.Optional(CONF_HUMIDITY_OUT_ENTITY): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor", device_class="humidity")
-                ),
-                vol.Optional(CONF_TEMPERATURE_OUT_ENTITY): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor", device_class="temperature")
-                ),
-                vol.Optional(CONF_CLOUD_COVER_ENTITY): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
-                ),
+                vol.Optional(CONF_HUMIDITY_OUT_ENTITY): _outdoor_source_selector("humidity"),
+                vol.Optional(CONF_TEMPERATURE_OUT_ENTITY): _outdoor_source_selector("temperature"),
+                vol.Optional(CONF_CLOUD_COVER_ENTITY): _outdoor_source_selector(),
                 vol.Optional(
                     CONF_LHS_RETENTION_DAYS, default=DEFAULT_LHS_RETENTION_DAYS
                 ): selector.NumberSelector(
@@ -423,9 +432,7 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
                 if hum_out_val and hum_out_val != ""
                 else {},
             )
-        ] = selector.EntitySelector(
-            selector.EntitySelectorConfig(domain="sensor", device_class="humidity")
-        )
+        ] = _outdoor_source_selector("humidity")
 
         schema_dict[
             vol.Optional(
@@ -434,16 +441,14 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
                 if temp_out_val and temp_out_val != ""
                 else {},
             )
-        ] = selector.EntitySelector(
-            selector.EntitySelectorConfig(domain="sensor", device_class="temperature")
-        )
+        ] = _outdoor_source_selector("temperature")
 
         schema_dict[
             vol.Optional(
                 CONF_CLOUD_COVER_ENTITY,
                 description={"suggested_value": cloud_val} if cloud_val and cloud_val != "" else {},
             )
-        ] = selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))
+        ] = _outdoor_source_selector()
 
         # Numeric fields
         schema_dict[

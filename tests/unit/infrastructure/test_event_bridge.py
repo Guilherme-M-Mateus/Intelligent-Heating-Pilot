@@ -747,3 +747,59 @@ class TestIHPEnabledParameter:
 
         call_kwargs = mock_orchestrator.calculate_and_schedule_anticipation.call_args[1]
         assert call_kwargs["ihp_enabled"] is True
+
+
+def _make_weather_state(condition: str, **attributes: float | str) -> Mock:
+    """Return a mock weather State whose numbers live in attributes."""
+    s = _make_state(condition, attributes)
+    s.domain = "weather"
+    return s
+
+
+class TestHasMeaningfulWeatherChange:
+    """Weather entities carry their values in attributes, not in the state."""
+
+    def test_cloud_coverage_swing_with_same_condition_is_meaningful(self):
+        bridge = _make_bridge()
+        event = _make_event(
+            "weather.home",
+            _make_weather_state("cloudy", cloud_coverage=10.0),
+            _make_weather_state("cloudy", cloud_coverage=90.0),
+        )
+        assert bridge._has_meaningful_monitored_change(event) is True
+
+    def test_small_attribute_change_is_not_meaningful(self):
+        bridge = _make_bridge()
+        event = _make_event(
+            "weather.home",
+            _make_weather_state("cloudy", temperature=10.0, humidity=60.0),
+            _make_weather_state("cloudy", temperature=10.5, humidity=61.0),
+        )
+        assert bridge._has_meaningful_monitored_change(event) is False
+
+    def test_condition_change_is_meaningful(self):
+        bridge = _make_bridge()
+        event = _make_event(
+            "weather.home",
+            _make_weather_state("cloudy", temperature=10.0),
+            _make_weather_state("sunny", temperature=10.0),
+        )
+        assert bridge._has_meaningful_monitored_change(event) is True
+
+    def test_attribute_disappearing_is_meaningful(self):
+        bridge = _make_bridge()
+        event = _make_event(
+            "weather.home",
+            _make_weather_state("cloudy", temperature=10.0),
+            _make_weather_state("cloudy"),
+        )
+        assert bridge._has_meaningful_monitored_change(event) is True
+
+    def test_non_numeric_attribute_is_ignored(self):
+        bridge = _make_bridge()
+        event = _make_event(
+            "weather.home",
+            _make_weather_state("cloudy", temperature="n/a"),
+            _make_weather_state("cloudy", temperature="n/b"),
+        )
+        assert bridge._has_meaningful_monitored_change(event) is False
