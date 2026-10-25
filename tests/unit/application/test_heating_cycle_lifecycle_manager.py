@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import suppress
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from unittest.mock import AsyncMock, Mock
 
@@ -301,6 +302,36 @@ class TestHeatingCycleLifecycleManager:
         assert manager._extraction_queue is not None
 
         # Cleanup: cancel background task to prevent lingering-task warnings
+        if manager._extraction_task is not None:
+            manager._extraction_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await manager._extraction_task
+
+    @pytest.mark.asyncio
+    async def test_on_retention_change_preserves_other_config_fields(
+        self,
+        manager: HeatingCycleLifecycleManager,
+    ) -> None:
+        """A retention change must not reset any other DeviceConfig field (#186)."""
+        # GIVEN: a config that differs from the defaults on several fields
+        custom_config = DeviceConfig(
+            device_id="climate.test_vtherm",
+            vtherm_entity_id="climate.test_vtherm",
+            scheduler_entities=["schedule.heating"],
+            lhs_retention_days=30,
+            auto_learning=False,
+            temp_delta_threshold=0.7,
+            min_cycle_duration_minutes=11,
+            humidity_in_entity_id="sensor.humidity_in",
+        )
+        manager._device_config = custom_config
+
+        # WHEN: retention is changed
+        await manager.on_retention_change(14)
+
+        # THEN: only the retention changed
+        assert manager._device_config == replace(custom_config, lhs_retention_days=14)
+
         if manager._extraction_task is not None:
             manager._extraction_task.cancel()
             with suppress(asyncio.CancelledError):
