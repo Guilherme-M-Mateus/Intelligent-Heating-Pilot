@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Learning from recorder history found no usable heating cycles** (#179) – History readers timestamped each sample with `last_changed`, which Home Assistant only updates when the entity state itself changes (the HVAC mode, for a thermostat). Indoor temperature, target temperature and heating-state updates therefore all shared the same timestamp, so cycle start and end times collapsed. Samples now use `last_updated`.
+- **Services failing with an unclear error during startup** – Calling `reset_learning` or `calculate_anticipated_start_time` before the device finished initializing raised an internal error. It now returns a clear validation error.
 - **Shell injection in CI workflows** (#194) – Free-text values (`fix_description`, the RC `version` input and pull request branch names) were expanded with `${{ }}` straight into `run:` scripts, so backticks or `$(...)` in them were executed by the runner. In every workflow, event data and step outputs now go through `env:` and are referenced as quoted shell variables. The "next steps" line of the RC summary also had unescaped backticks that ran `integration` and `main` as commands.
 - **Pylint missing from the code quality check** – `pylint` was not a declared dependency, so the `Code Quality` workflow failed with "Command not found: pylint" on every PR. It is now part of the dev dependencies.
 
