@@ -616,8 +616,9 @@ class HeatingCycleLifecycleManager:
             # Trigger LHS recalculation with ALL cached cycles
             await self._trigger_lhs_cascade(all_cycles)
 
-            # Persist learned dead time from extracted cycles
-            await self._persist_learned_dead_time(cycles)
+            # Persist learned dead time from ALL cached cycles, like the LHS cascade:
+            # using only this batch would let whichever day finishes last decide it.
+            await self._persist_learned_dead_time(all_cycles)
 
         except Exception as exc:
             _LOGGER.error("Failed to process extracted cycles: %s", exc)

@@ -1492,6 +1492,47 @@ class TestHeatingCycleLifecycleManager:
         ), f"Expected 30 cycles passed to contextual LHS, got {len(cycles_passed)}"
 
     @pytest.mark.asyncio
+    async def test_on_cycles_extracted_persists_dead_time_from_all_cached_cycles(
+        self,
+        manager: HeatingCycleLifecycleManager,
+        mock_heating_cycle_storage: Mock,
+        mock_lhs_storage: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Learned dead time must average ALL cached cycles, not only the last batch.
+
+        Issue #185: the batch that finished last decided the persisted dead time.
+        """
+        # GIVEN: Cache holds 3 older cycles at 30 min and 1 new cycle at 10 min
+        old_cycles = [
+            replace(
+                self._create_heating_cycle(base_datetime - timedelta(days=d)),
+                dead_time_cycle_minutes=30.0,
+            )
+            for d in range(1, 4)
+        ]
+        new_cycles = [
+            replace(self._create_heating_cycle(base_datetime), dead_time_cycle_minutes=10.0)
+        ]
+        mock_heating_cycle_storage.get_cache_data = AsyncMock(
+            return_value=HeatingCycleCacheData(
+                device_id="climate.test_vtherm",
+                cycles=tuple(old_cycles + new_cycles),
+                last_search_time=base_datetime,
+                retention_days=30,
+            )
+        )
+        mock_lhs_storage.set_learned_dead_time = AsyncMock()
+
+        # WHEN: Only the new batch is extracted
+        await manager._on_cycles_extracted(new_cycles)
+
+        # THEN: Persisted dead time is the average over all 4 cycles (25 min), not 10
+        mock_lhs_storage.set_learned_dead_time.assert_awaited_once()
+        persisted = mock_lhs_storage.set_learned_dead_time.await_args[0][0]
+        assert persisted == pytest.approx(25.0)
+
+    @pytest.mark.asyncio
     async def test_on_cycles_extracted_fallback_without_storage(
         self,
         device_config: DeviceConfig,
