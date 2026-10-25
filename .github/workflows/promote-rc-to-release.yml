@@ -31,10 +31,12 @@ jobs:
 
       - name: Check if tag already exists
         id: tag-check
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          if git rev-parse "v${{ steps.version.outputs.version }}" >/dev/null 2>&1; then
+          if git rev-parse "v${VERSION}" >/dev/null 2>&1; then
             echo "exists=true" >> $GITHUB_OUTPUT
-            echo "⚠️ Le tag v${{ steps.version.outputs.version }} existe déjà"
+            echo "⚠️ Le tag v${VERSION} existe déjà"
           else
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
@@ -43,8 +45,8 @@ jobs:
         id: rc-check
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
           RC_COUNT=$(gh release list --limit 100 --json tagName,isPrerelease \
             | jq -r --arg v "$VERSION" \
                 '[.[] | select(.isPrerelease and (.tagName | test("^v" + $v + "-rc[0-9]+$")))] | length')
@@ -60,9 +62,8 @@ jobs:
         id: release-notes
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
-
           CHANGELOG_CONTENT=$(awk '/^## \[Unreleased\]$/{flag=1;next} flag && /^## \[/{flag=0} flag{print}' CHANGELOG.md)
           if [ -z "$CHANGELOG_CONTENT" ]; then
             echo "❌ Aucune entrée Unreleased dans CHANGELOG.md"
@@ -101,10 +102,9 @@ jobs:
         if: steps.tag-check.outputs.exists == 'false'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          TAG="${{ steps.version.outputs.tag }}"
-          VERSION="${{ steps.version.outputs.version }}"
-
           gh release create "$TAG" \
             --title "🚀 Release $VERSION" \
             --notes-file /tmp/release-notes.md \
@@ -114,8 +114,8 @@ jobs:
       - name: Delete RC and dev pre-releases
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
           # Query GitHub Releases API for all pre-releases matching this version (ground truth)
           RC_TAGS=$(gh release list --json tagName,isPrerelease \
             | jq -r --arg v "$VERSION" '
@@ -135,9 +135,9 @@ jobs:
       - name: Update CHANGELOG with version (via PR)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           TODAY=$(date +%Y-%m-%d)
-          VERSION="${{ steps.version.outputs.version }}"
           BRANCH="chore/changelog-v${VERSION}"
 
           git config user.name "github-actions[bot]"
@@ -215,8 +215,9 @@ jobs:
       # ancestor instead of two competing edits. integration only forbids
       # deletion, so the merge is pushed directly.
       - name: Merge CHANGELOG stamp into integration
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          VERSION="${{ steps.version.outputs.version }}"
           BRANCH="chore/changelog-v${VERSION}"
 
           if ! git ls-remote --heads origin "$BRANCH" | grep -q "$BRANCH"; then
@@ -232,8 +233,10 @@ jobs:
       - name: Comment on PR
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.version.outputs.version }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          gh pr comment ${{ github.event.pull_request.number }} --body "🚀 **Release v${{ steps.version.outputs.version }} publiée !**
+          gh pr comment "$PR_NUMBER" --body "🚀 **Release v${VERSION} publiée !**
 
           La release est maintenant disponible pour tous les utilisateurs.
 
