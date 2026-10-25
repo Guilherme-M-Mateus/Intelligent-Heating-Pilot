@@ -154,6 +154,7 @@ feat: ...     # Developer (new feature implementation)
 fix: ...      # Developer (bug fix)
 refactor: ... # Tech Lead (non-behavior changes)
 docs: ...     # Documentation Agent
+ci: ...       # CI/CD (GitHub Actions workflows and their configuration)
 ```
 
 ---

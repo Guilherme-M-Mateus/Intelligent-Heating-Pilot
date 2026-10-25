@@ -4,7 +4,7 @@
 # blocking. The rules below flag existing, unrelated hardening work (pinning
 # actions by SHA, narrowing permissions, checkout credential persistence);
 # they are disabled until that work is done so the check can gate PRs now.
-# Re-enable them one by one once their findings are fixed.
+# Re-enable them one by one once their findings are fixed (tracked in #202).
 rules:
   unpinned-uses:
     disable: true
