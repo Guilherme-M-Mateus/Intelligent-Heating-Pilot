@@ -202,7 +202,9 @@ class HeatingApplication:
             safety_shutoff_grace_minutes=self._safety_shutoff_grace_minutes,
         )
         global_lhs_calculator = GlobalLHSCalculatorService()
-        contextual_lhs_calculator = ContextualLHSCalculatorService()
+        contextual_lhs_calculator = ContextualLHSCalculatorService(
+            local_tz=dt_util.get_default_time_zone()
+        )
 
         # Create LHS lifecycle manager FIRST (required by heating_cycle_manager)
         self._lhs_manager = LhsLifecycleManagerFactory.create(

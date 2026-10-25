@@ -144,9 +144,9 @@ class TestContextualLHSCalculatorService(unittest.TestCase):
 
         self.assertIsNone(result)
 
-    def test_calculate_contextual_lhs_filters_by_start_hour(self):
-        """Test contextual LHS filters cycles by start hour."""
-        base_time = datetime(2025, 12, 18, 14, 0, 0, tzinfo=UTC)
+    def test_calculate_contextual_lhs_filters_by_end_hour(self):
+        """Test contextual LHS filters cycles by the hour their target was reached."""
+        base_time = datetime(2025, 12, 18, 13, 0, 0, tzinfo=UTC)
 
         cycles = [
             self._create_cycle(base_time, duration_hours=1.0, temp_increase=1.0),
@@ -163,9 +163,9 @@ class TestContextualLHSCalculatorService(unittest.TestCase):
         # Slopes at hour 15: 2.0 and 4.0 -> average 3.0
         self.assertAlmostEqual(result, 3.0, places=2)  # type: ignore
 
-    def test_group_cycles_by_start_hour(self):
-        """Test grouping cycles by start hour."""
-        base_time = datetime(2025, 12, 18, 8, 0, 0, tzinfo=UTC)
+    def test_group_cycles_by_hour(self):
+        """Test grouping cycles by end hour (1h cycles starting at 07:00 and 09:00)."""
+        base_time = datetime(2025, 12, 18, 7, 0, 0, tzinfo=UTC)
 
         cycles = [
             self._create_cycle(base_time, duration_hours=1.0, temp_increase=1.0),
@@ -177,14 +177,14 @@ class TestContextualLHSCalculatorService(unittest.TestCase):
             ),
         ]
 
-        grouped = self.service.group_cycles_by_start_hour(cycles)
+        grouped = self.service.group_cycles_by_hour(cycles)
 
         self.assertEqual(len(grouped[8]), 1)
         self.assertEqual(len(grouped[10]), 2)
 
     def test_calculate_all_contextual_lhs(self):
         """Test calculating contextual LHS for all 24 hours."""
-        base_time = datetime(2025, 12, 18, 6, 0, 0, tzinfo=UTC)
+        base_time = datetime(2025, 12, 18, 5, 0, 0, tzinfo=UTC)
         cycles = [
             self._create_cycle(base_time, duration_hours=1.0, temp_increase=2.0),
             self._create_cycle(
