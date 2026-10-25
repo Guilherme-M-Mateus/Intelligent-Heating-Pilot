@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Shell injection in CI workflows** (#194) – Free-text values (`fix_description`, the RC `version` input and pull request branch names) were expanded with `${{ }}` straight into `run:` scripts, so backticks or `$(...)` in them were executed by the runner. In every workflow, event data and step outputs now go through `env:` and are referenced as quoted shell variables. The "next steps" line of the RC summary also had unescaped backticks that ran `integration` and `main` as commands.
+- **Pylint missing from the code quality check** – `pylint` was not a declared dependency, so the `Code Quality` workflow failed with "Command not found: pylint" on every PR. It is now part of the dev dependencies.
 
 ### Added
 - **Workflow linting in CI** (#194) – A new `Workflow Lint` workflow runs `actionlint` (syntax and shellcheck on `run:` scripts) and `zizmor` (security audit, including template injection) on pull requests that touch `.github/workflows`.
