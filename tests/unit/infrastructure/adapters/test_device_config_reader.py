@@ -7,6 +7,7 @@ import pytest
 from custom_components.intelligent_heating_pilot.const import (
     CONF_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
     CONF_AUTO_LEARNING,
+    CONF_DATA_RETENTION_DAYS,
     CONF_DEAD_TIME_MINUTES,
     CONF_LHS_RETENTION_DAYS,
     CONF_SCHEDULER_ENTITIES,
@@ -180,3 +181,37 @@ async def test_get_device_config_outdoor_temperature_entity_defaults_to_none(
     device_config = await reader.get_device_config("test_device_id")
 
     assert device_config.temperature_out_entity_id is None
+
+
+@pytest.mark.asyncio
+async def test_retention_change_in_options_keeps_rest_of_device_config(
+    mock_hass: Mock, mock_config_entry: Mock
+) -> None:
+    """A retention edit written to options must not reset the other settings (#186)."""
+    mock_config_entry.data[CONF_AUTO_LEARNING] = False
+    mock_config_entry.data[CONF_DEAD_TIME_MINUTES] = 7.5
+    mock_config_entry.data[CONF_TEMPERATURE_OUT_ENTITY] = "sensor.outdoor_data"
+    mock_config_entry.options = {CONF_LHS_RETENTION_DAYS: 31}
+    reader = HADeviceConfigReader(mock_hass, mock_config_entry)
+
+    device_config = await reader.get_device_config("test_device_id")
+
+    assert device_config.lhs_retention_days == 31
+    assert device_config.auto_learning is False
+    assert device_config.dead_time_minutes == 7.5
+    assert device_config.temperature_out_entity_id == "sensor.outdoor_data"
+    assert device_config.scheduler_entities == ["switch.schedule1"]
+
+
+@pytest.mark.asyncio
+async def test_legacy_data_retention_key_does_not_mask_retention_edit(
+    mock_hass: Mock, mock_config_entry: Mock
+) -> None:
+    """An edit of lhs_retention_days must win over a legacy data_retention_days value."""
+    mock_config_entry.data[CONF_DATA_RETENTION_DAYS] = 30
+    mock_config_entry.options = {CONF_LHS_RETENTION_DAYS: 60}
+    reader = HADeviceConfigReader(mock_hass, mock_config_entry)
+
+    device_config = await reader.get_device_config("test_device_id")
+
+    assert device_config.lhs_retention_days == 60
