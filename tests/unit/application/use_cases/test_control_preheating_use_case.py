@@ -151,33 +151,3 @@ class TestControlPreheatingUseCase:
 
         # WHEN/THEN
         assert use_case.get_preheating_target_time() == target_time
-
-    def test_restart_suppression_is_scoped_to_its_slot(
-        self,
-        use_case: ControlPreheatingUseCase,
-    ) -> None:
-        """Suppression for one slot must not block anticipation of the next one."""
-        suppressed_target = datetime(2025, 2, 10, 7, 0, 0)
-        next_target = datetime(2025, 2, 10, 18, 0, 0)
-
-        use_case.suppress_restart(suppressed_target)
-
-        assert use_case.is_restart_suppressed(suppressed_target)
-        assert not use_case.is_restart_suppressed(next_target)
-
-    @pytest.mark.asyncio
-    async def test_start_preheating_clears_restart_suppression(
-        self,
-        use_case: ControlPreheatingUseCase,
-    ) -> None:
-        """An explicit start lifts any previous suppression."""
-        target_time = datetime(2025, 2, 10, 7, 0, 0)
-        use_case.suppress_restart(target_time)
-
-        await use_case.start_preheating(
-            target_time=target_time,
-            target_temp=21.0,
-            scheduler_entity_id="schedule.heating",
-        )
-
-        assert not use_case.is_restart_suppressed(target_time)

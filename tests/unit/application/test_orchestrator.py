@@ -16,7 +16,6 @@ from custom_components.intelligent_heating_pilot.application.orchestrator import
 )
 from custom_components.intelligent_heating_pilot.application.use_cases import (
     CalculateAnticipationUseCase,
-    CheckOvershootRiskUseCase,
     ControlPreheatingUseCase,
     ScheduleAnticipationActionUseCase,
     UpdateCacheDataUseCase,
@@ -63,13 +62,6 @@ class TestHeatingOrchestrator:
         return uc
 
     @pytest.fixture
-    def mock_check_overshoot_risk(self) -> Mock:
-        """Create mock CheckOvershootRiskUseCase."""
-        uc = Mock(spec=CheckOvershootRiskUseCase)
-        uc.check_overshoot_risk = AsyncMock(return_value=False)
-        return uc
-
-    @pytest.fixture
     def mock_update_cache(self) -> Mock:
         """Create mock UpdateCacheDataUseCase."""
         uc = Mock(spec=UpdateCacheDataUseCase)
@@ -82,7 +74,6 @@ class TestHeatingOrchestrator:
         mock_calculate_anticipation: Mock,
         mock_control_preheating: Mock,
         mock_schedule_anticipation_action: Mock,
-        mock_check_overshoot_risk: Mock,
         mock_update_cache: Mock,
     ) -> HeatingOrchestrator:
         """Create HeatingOrchestrator instance with mocked use cases."""
@@ -90,7 +81,6 @@ class TestHeatingOrchestrator:
             calculate_anticipation=mock_calculate_anticipation,
             control_preheating=mock_control_preheating,
             schedule_anticipation_action=mock_schedule_anticipation_action,
-            check_overshoot_risk=mock_check_overshoot_risk,
             update_cache=mock_update_cache,
         )
 

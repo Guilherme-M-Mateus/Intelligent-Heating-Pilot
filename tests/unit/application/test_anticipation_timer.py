@@ -54,7 +54,6 @@ def mock_control_preheating() -> Mock:
     control.is_preheating_active = Mock(return_value=False)
     control.get_preheating_target_time = Mock(return_value=None)
     control.get_active_scheduler_entity = Mock(return_value=None)
-    control.is_restart_suppressed = Mock(return_value=False)
     control.cancel_preheating = AsyncMock()
     control.start_preheating = AsyncMock()
     return control

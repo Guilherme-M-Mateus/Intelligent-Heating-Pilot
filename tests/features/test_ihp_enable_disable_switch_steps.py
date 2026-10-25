@@ -25,7 +25,6 @@ from custom_components.intelligent_heating_pilot.application.orchestrator import
 )
 from custom_components.intelligent_heating_pilot.application.use_cases import (
     CalculateAnticipationUseCase,
-    CheckOvershootRiskUseCase,
     ControlPreheatingUseCase,
     ScheduleAnticipationActionUseCase,
     UpdateCacheDataUseCase,
@@ -160,13 +159,6 @@ def orchestrator_ihp_switch(mock_adapters_ihp_switch):
         control_preheating_use_case=control_preheating,
     )
 
-    check_overshoot_risk = CheckOvershootRiskUseCase(
-        scheduler_reader=mock_adapters_ihp_switch["scheduler_reader"],
-        environment_reader=mock_adapters_ihp_switch["environment_reader"],
-        climate_data_reader=mock_adapters_ihp_switch["climate_data_reader"],
-        control_preheating=control_preheating,
-    )
-
     update_cache = UpdateCacheDataUseCase(
         cycle_storage=mock_adapters_ihp_switch["heating_cycle_lifecycle_manager"],
         lhs_storage=mock_adapters_ihp_switch["model_storage"],
@@ -178,7 +170,6 @@ def orchestrator_ihp_switch(mock_adapters_ihp_switch):
         calculate_anticipation=calculate_anticipation,
         control_preheating=control_preheating,
         schedule_anticipation_action=schedule_anticipation_action,
-        check_overshoot_risk=check_overshoot_risk,
         update_cache=update_cache,
     )
     return orchestrator
