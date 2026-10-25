@@ -6,7 +6,7 @@ reached (end hour) and calculating contextual heating slopes.
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from homeassistant.util import dt as dt_util
@@ -413,3 +413,21 @@ class TestContextualLHSCalculatorService:
             dead_time_cycle_minutes=dead_time_cycle_minutes,
             tariff_details=None,
         )
+
+
+class TestContextualHourTimezone:
+    """Cycle times are naive UTC; slots are looked up in local time (#183)."""
+
+    def test_naive_utc_end_time_is_converted_to_local_hour(self) -> None:
+        """A cycle ending 05:00 UTC serves the 07:00 slot in UTC+2."""
+        service = ContextualLHSCalculatorService(local_tz=timezone(timedelta(hours=2)))
+        cycle = HeatingCycle(
+            device_id="test_device",
+            start_time=datetime(2025, 2, 9, 3, 30),
+            end_time=datetime(2025, 2, 9, 5, 0),
+            target_temp=20.0,
+            end_temp=20.0,
+            start_temp=17.0,
+        )
+
+        assert service.extract_hour_from_cycle(cycle) == 7

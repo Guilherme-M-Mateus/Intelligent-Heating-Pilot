@@ -7,6 +7,7 @@ and calculating average heating slopes per hour. No Home Assistant dependencies.
 from __future__ import annotations
 
 import logging
+from datetime import UTC, tzinfo
 
 from ..value_objects import HeatingCycle
 
@@ -28,8 +29,20 @@ class ContextualLHSCalculatorService:
     - Calculate average LHS per hour
     - Handle empty groups gracefully
 
+    Cycle timestamps come from recorder history as naive UTC datetimes, while the
+    scheduled slots used for lookups are in local time. ``local_tz`` brings both to
+    the same clock; without it the cycle hour is used as stored.
+
     Pure domain logic with no Home Assistant dependencies.
     """
+
+    def __init__(self, local_tz: tzinfo | None = None) -> None:
+        """Initialize the service.
+
+        Args:
+            local_tz: Timezone of the scheduled slots. Naive cycle times are read as UTC.
+        """
+        self._local_tz = local_tz
 
     def extract_hour_from_cycle(self, cycle: HeatingCycle) -> int:
         """Extract the contextual hour (0-23) of a cycle.
@@ -46,7 +59,10 @@ class ContextualLHSCalculatorService:
             Hour of day (0-23)
         """
         _LOGGER.debug("Extracting hour from cycle ended at %s", cycle.end_time)
-        hour = cycle.end_hour
+        end_time = cycle.end_time
+        if self._local_tz is not None:
+            end_time = end_time.replace(tzinfo=end_time.tzinfo or UTC).astimezone(self._local_tz)
+        hour = end_time.hour
         _LOGGER.debug("Extracted hour: %d", hour)
         return hour
 
