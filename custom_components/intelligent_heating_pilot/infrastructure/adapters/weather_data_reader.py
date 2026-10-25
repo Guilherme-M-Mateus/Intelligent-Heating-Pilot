@@ -161,7 +161,7 @@ class HAWeatherDataReader(IHistoricalDataAdapter):
         Returns:
             Parsed datetime object
         """
-        timestamp_str = record.get("last_changed", record.get("last_updated"))
+        timestamp_str = record.get("last_updated", record.get("last_changed"))
 
         if isinstance(timestamp_str, str):
             # Parse ISO format string
