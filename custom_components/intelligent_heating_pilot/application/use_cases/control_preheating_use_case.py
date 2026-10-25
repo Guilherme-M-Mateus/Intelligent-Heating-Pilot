@@ -39,7 +39,6 @@ class ControlPreheatingUseCase:
         self._is_preheating_active = False
         self._preheating_target_time: datetime | None = None
         self._active_scheduler_entity: str | None = None
-        self._suppressed_slot: tuple[datetime, float] | None = None
 
     async def cancel_preheating(self, scheduler_entity_id: str | None = None) -> None:
         """Cancel active preheating and revert to current scheduled state.
@@ -71,7 +70,7 @@ class ControlPreheatingUseCase:
             _LOGGER.debug("No active preheating to cancel")
 
         # Mark preheating as inactive (but keep target_time for state tracking)
-        # Target time may still be in future (e.g., cancelled due to overshoot)
+        # Target time may still be in future (e.g., reverted after a postponed start)
         self._is_preheating_active = False
         # Note: _preheating_target_time and _active_scheduler_entity are NOT cleared
         # They remain for state tracking and potential restart
@@ -88,56 +87,18 @@ class ControlPreheatingUseCase:
         _LOGGER.debug("Marking preheating complete (target=%s)", self._preheating_target_time)
         self._is_preheating_active = False
 
-    def suppress_restart(self, target_time: datetime, target_temp: float) -> None:
-        """Prevent preheating from restarting for the given slot.
-
-        A safety cancellation (e.g. overshoot risk) must stick until the slot
-        fires; otherwise the next recalculation would see the anticipated start
-        in the past and start preheating again, making the setpoint flap.
-        The slot is identified by its time and temperature, so raising the
-        slot's target lifts the suppression.
-
-        Args:
-            target_time: Target time of the slot whose preheating is suppressed
-            target_temp: Target temperature of that slot
-        """
-        _LOGGER.info(
-            "Suppressing preheating restart until target %s (%.1f°C)",
-            target_time.isoformat(),
-            target_temp,
-        )
-        self._suppressed_slot = (target_time, target_temp)
-
-    def is_restart_suppressed(self, target_time: datetime, target_temp: float) -> bool:
-        """Check whether preheating is suppressed for the given slot.
-
-        Args:
-            target_time: Target time of the slot to check
-            target_temp: Target temperature of the slot to check
-
-        Returns:
-            True if preheating was cancelled for this slot and must not restart
-        """
-        return self._suppressed_slot == (target_time, target_temp)
-
     async def start_preheating(
         self,
         target_time: datetime,
         target_temp: float,
         scheduler_entity_id: str,
-    ) -> bool:
+    ) -> None:
         """Start preheating by triggering scheduler action.
-
-        The suppression check lives here rather than in callers so that every
-        start path (recalculation, timer callback) honours it.
 
         Args:
             target_time: Target schedule time
             target_temp: Target temperature
             scheduler_entity_id: Scheduler entity to trigger
-
-        Returns:
-            True if preheating started, False if it is suppressed for this slot
         """
         _LOGGER.debug(
             "Entering ControlPreheatingUseCase.start_preheating(target_time=%s, temp=%.1f, scheduler=%s)",
@@ -145,13 +106,6 @@ class ControlPreheatingUseCase:
             target_temp,
             scheduler_entity_id,
         )
-        if self.is_restart_suppressed(target_time, target_temp):
-            _LOGGER.info(
-                "Not starting preheating for target %s: suppressed after a safety cancellation",
-                target_time.isoformat(),
-            )
-            _LOGGER.debug("Exiting ControlPreheatingUseCase.start_preheating() -> False")
-            return False
         _LOGGER.info(
             "Starting preheating for target %s (%.1f°C)",
             target_time.isoformat(),
@@ -166,8 +120,7 @@ class ControlPreheatingUseCase:
         self._preheating_target_time = target_time
         self._active_scheduler_entity = scheduler_entity_id
 
-        _LOGGER.debug("Exiting ControlPreheatingUseCase.start_preheating() -> True")
-        return True
+        _LOGGER.debug("Exiting ControlPreheatingUseCase.start_preheating()")
 
     def is_preheating_active(self) -> bool:
         """Check if preheating is currently active.

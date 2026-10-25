@@ -226,7 +226,7 @@ When heating stops unexpectedly (e.g., safety protection, frost mode), IHP waits
 This setting controls how IHP reacts when anticipation is recalculated while preheating is already active.
 
 **Current behavior:**
-- IHP cancels active preheating only when the newly calculated anticipated start is pushed later by at least this threshold
+- IHP cancels active preheating only when the newly calculated anticipated start is pushed later by at least this threshold and is still in the future; a timer then restarts preheating at the new start
 - If the new anticipated start moves earlier, IHP keeps active preheating running
 - If the postponement is below threshold, IHP keeps active preheating running
 

@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING
 
 from .use_cases import (
     CalculateAnticipationUseCase,
-    CheckOvershootRiskUseCase,
     ControlPreheatingUseCase,
     ScheduleAnticipationActionUseCase,
     UpdateCacheDataUseCase,
@@ -42,7 +41,6 @@ class HeatingOrchestrator:
         calculate_anticipation: CalculateAnticipationUseCase,
         control_preheating: ControlPreheatingUseCase,
         schedule_anticipation_action: ScheduleAnticipationActionUseCase,
-        check_overshoot_risk: CheckOvershootRiskUseCase,
         update_cache: UpdateCacheDataUseCase,
     ) -> None:
         """Initialize the orchestrator with use cases.
@@ -51,14 +49,12 @@ class HeatingOrchestrator:
             calculate_anticipation: Use case for calculating anticipation data
             control_preheating: Use case for controlling preheating
             schedule_anticipation_action: Use case for scheduling anticipation actions
-            check_overshoot_risk: Use case for checking overshoot risk
             update_cache: Use case for updating cache
         """
         _LOGGER.debug("Initializing HeatingOrchestrator")
         self._calculate_anticipation = calculate_anticipation
         self._control_preheating = control_preheating
         self._schedule_anticipation_action = schedule_anticipation_action
-        self._check_overshoot_risk = check_overshoot_risk
         self._update_cache = update_cache
 
     async def calculate_anticipation_only(
@@ -139,8 +135,7 @@ class HeatingOrchestrator:
         This orchestrator method:
         1. Calculates anticipation data
         2. Delegates scheduling decisions to ScheduleAnticipationActionUseCase
-        3. Checks overshoot risk while preheating is active
-        4. Always returns anticipation data structure
+        3. Always returns anticipation data structure
 
         Args:
             ihp_enabled: Whether IHP preheating is enabled
@@ -164,38 +159,5 @@ class HeatingOrchestrator:
             ihp_enabled,
         )
 
-        # Step 3: Recalculations are the only periodic hook during a preheat,
-        # so overshoot is checked here (the use case skips when not preheating).
-        active_scheduler = self._control_preheating.get_active_scheduler_entity()
-        if active_scheduler:
-            await self.check_and_prevent_overshoot(active_scheduler)
-
         _LOGGER.debug("Exiting HeatingOrchestrator.calculate_and_schedule_anticipation() -> data")
         return anticipation_data
-
-    async def check_and_prevent_overshoot(self, scheduler_entity_id: str) -> bool:
-        """Check overshoot risk and cancel preheating if needed.
-
-        Args:
-            scheduler_entity_id: Scheduler entity to cancel if overshoot detected
-
-        Returns:
-            True if overshoot detected and cancellation triggered, False otherwise
-        """
-        _LOGGER.debug(
-            "Entering HeatingOrchestrator.check_and_prevent_overshoot(scheduler=%s)",
-            scheduler_entity_id,
-        )
-
-        overshoot_detected = await self._check_overshoot_risk.check_and_prevent_overshoot(
-            scheduler_entity_id=scheduler_entity_id
-        )
-
-        if overshoot_detected:
-            await self._schedule_anticipation_action.cancel_action()
-
-        _LOGGER.debug(
-            "Exiting HeatingOrchestrator.check_and_prevent_overshoot() -> %s",
-            overshoot_detected,
-        )
-        return overshoot_detected

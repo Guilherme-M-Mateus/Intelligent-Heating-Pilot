@@ -175,9 +175,15 @@ IHP cancels and reschedules active preheating only if:
 1. The recalculation targets the same schedule target time
 2. The newly anticipated start is later than the previously scheduled start
 3. The postponement is at least the configured threshold (default: 15 minutes)
+4. The new anticipated start is still in the future
+
+This is how IHP handles a room that heats faster than predicted: the setpoint goes back to the current schedule, and a timer starts preheating again at the new anticipated start, so the target is still reached on time.
 
 If the new anticipated start moves earlier, IHP keeps current preheating active.
 If the new anticipated start is only slightly later (below threshold), IHP keeps current preheating active.
+If the new anticipated start is already past, IHP keeps current preheating active, since reverting would only restart it at once.
+If the room reaches its target early, IHP keeps preheating active until the slot: the thermostat regulates on the target setpoint.
+If the slot being preheated is removed or moved, IHP reverts the preheating.
 
 ### The Calculation
 
@@ -314,7 +320,7 @@ Here's the full journey from a scheduled event to IHP triggering heating:
 4. HEATING CYCLE MONITORING
    └─ IHP watches temperature rise
       ├─ Collects VTherm's slope observations
-      ├─ Prevents overshooting (stops early if approaching target)
+      ├─ Postpones preheating if the room heats faster than predicted
       └─ Waits for cycle completion
 
 5. CYCLE COMPLETION & LEARNING

@@ -18,7 +18,6 @@ from .application.lhs_lifecycle_manager_factory import LhsLifecycleManagerFactor
 from .application.orchestrator import HeatingOrchestrator
 from .application.use_cases import (
     CalculateAnticipationUseCase,
-    CheckOvershootRiskUseCase,
     ControlPreheatingUseCase,
     ScheduleAnticipationActionUseCase,
     UpdateCacheDataUseCase,
@@ -252,13 +251,6 @@ class HeatingApplication:
             anticipation_recalc_tolerance_minutes=self._device_config.anticipation_recalc_tolerance_minutes,
         )
 
-        check_overshoot_risk = CheckOvershootRiskUseCase(
-            scheduler_reader=self._scheduler_reader,
-            environment_reader=self._environment_reader,
-            climate_data_reader=self._climate_data_reader,
-            control_preheating=control_preheating,
-        )
-
         update_cache = UpdateCacheDataUseCase(
             cycle_storage=self._cycle_storage,
             lhs_storage=self._lhs_storage,
@@ -271,7 +263,6 @@ class HeatingApplication:
             calculate_anticipation=calculate_anticipation,
             control_preheating=control_preheating,
             schedule_anticipation_action=schedule_anticipation_action,
-            check_overshoot_risk=check_overshoot_risk,
             update_cache=update_cache,
         )
         _LOGGER.debug("Orchestrator created successfully")

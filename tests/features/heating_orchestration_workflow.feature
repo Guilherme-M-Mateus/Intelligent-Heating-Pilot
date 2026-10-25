@@ -34,10 +34,12 @@ Feature: Heating Orchestration Workflow
     And no preheating timer should be scheduled
 
   # ===================================================================
-  # REVERT LOGIC — When LHS improves, cancel and reschedule
+  # REVERT LOGIC — Room heating faster than predicted: postpone, then resume
+  # A preheat that would reach the target too early is reverted and a timer
+  # restarts it at the new anticipated start, so the target is still met on time.
   # ===================================================================
 
-  Scenario: Revert preheating when anticipated start moves to the future
+  Scenario: Room heating faster than predicted postpones preheating to the new start
     Given the orchestrator is configured with all use cases
     And preheating is currently active for target time 07:00
     And the new anticipated start time is 06:15 which is after the current time
@@ -81,7 +83,6 @@ Feature: Heating Orchestration Workflow
     And preheating is currently active for target time 07:00
     And the next timeslot is at 07:00 with target temperature 21°C
     And anticipation calculation returns 0 minutes of anticipation
-    And the room is no longer warming
     When the orchestrator calculates and schedules anticipation
     Then preheating should continue without interruption
     And preheating should still be active
@@ -142,32 +143,3 @@ Feature: Heating Orchestration Workflow
     Then the result should indicate clear values
     And the anticipation state should be cleared
     And any active preheating should be canceled
-
-  # ===================================================================
-  # OVERSHOOT PREVENTION — Coordinate overshoot detection
-  # ===================================================================
-
-  Scenario: Detect overshoot risk and cancel preheating
-    Given the orchestrator is configured with all use cases
-    And preheating is currently active for target time 07:00
-    And overshoot risk is detected by the overshoot use case
-    When the orchestrator checks for overshoot risk
-    Then preheating should be canceled due to overshoot
-    And the anticipation state should be cleared
-
-  Scenario: No overshoot check needed when not preheating
-    Given the orchestrator is configured with all use cases
-    And no preheating is currently active
-    When the orchestrator checks for overshoot risk
-    Then no cancel action should be triggered
-    And the system should remain in idle state
-
-  Scenario: Preheating canceled for overshoot is not restarted before its slot
-    Given the orchestrator is configured with all use cases
-    And preheating is currently active for target time 07:00
-    And overshoot risk is detected by the overshoot use case
-    And the anticipated start for the 07:30 slot is already in the past
-    When the orchestrator checks for overshoot risk
-    And the orchestrator calculates and schedules anticipation
-    Then preheating should be canceled due to overshoot
-    And preheating should not be restarted

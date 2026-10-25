@@ -552,37 +552,6 @@ class TestScheduleAnticipationActionStateTransitions:
         cancel_timer.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_suppressed_slot_is_not_rescheduled(
-        self,
-        schedule_anticipation_action_use_case: ScheduleAnticipationActionUseCase,
-        control_preheating_use_case,
-        scheduler_reader,
-        test_now: datetime,
-    ) -> None:
-        """A slot suppressed after overshoot gets neither a timer nor an immediate start."""
-        target_time = test_now + timedelta(hours=2)
-        scheduler_reader.is_scheduler_enabled = AsyncMock(return_value=True)
-        schedule_anticipation_action_use_case._control_preheating = control_preheating_use_case
-        control_preheating_use_case.suppress_restart(target_time, 21.0)
-
-        with patch.object(dt_util, "now", return_value=test_now):
-            for anticipated_start in (
-                test_now - timedelta(minutes=5),
-                test_now + timedelta(hours=1),
-            ):
-                await schedule_anticipation_action_use_case.schedule_action(
-                    anticipated_start=anticipated_start,
-                    target_time=target_time,
-                    target_temp=21.0,
-                    scheduler_entity_id="schedule.heating",
-                    lhs=2.0,
-                )
-
-        assert not control_preheating_use_case.is_preheating_active()
-        timer_scheduler = schedule_anticipation_action_use_case._timer_scheduler
-        assert len(timer_scheduler.scheduled_timers) == 0  # type: ignore
-
-    @pytest.mark.asyncio
     async def test_preheating_for_removed_slot_is_reverted(
         self,
         schedule_anticipation_action_use_case: ScheduleAnticipationActionUseCase,
@@ -647,26 +616,3 @@ class TestScheduleAnticipationActionStateTransitions:
 
         cancel_timer.assert_called_once()
         assert control_preheating_use_case.is_preheating_active()
-
-    @pytest.mark.asyncio
-    async def test_timer_does_not_restart_suppressed_slot(
-        self,
-        schedule_anticipation_action_use_case: ScheduleAnticipationActionUseCase,
-        control_preheating_use_case,
-        scheduler_reader,
-        test_now: datetime,
-    ) -> None:
-        """The timer callback path honours a suppression set after it was scheduled."""
-        target_time = test_now + timedelta(hours=1)
-        schedule_anticipation_action_use_case._control_preheating = control_preheating_use_case
-        scheduler_reader.is_scheduler_enabled = AsyncMock(return_value=True)
-        control_preheating_use_case._scheduler_commander.run_action = AsyncMock()
-        control_preheating_use_case.suppress_restart(target_time, 21.0)
-
-        await schedule_anticipation_action_use_case._trigger_action(
-            target_time, 21.0, "schedule.heating"
-        )
-
-        assert not control_preheating_use_case.is_preheating_active()
-        control_preheating_use_case._scheduler_commander.run_action.assert_not_awaited()
-        assert schedule_anticipation_action_use_case._preheating_target_temp is None

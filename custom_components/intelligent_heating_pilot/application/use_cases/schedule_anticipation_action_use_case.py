@@ -223,13 +223,6 @@ class ScheduleAnticipationActionUseCase:
                 await self._clear_state()
             return
 
-        if self._control_preheating.is_restart_suppressed(target_time, target_temp):
-            _LOGGER.debug(
-                "Preheating suppressed for target %s - skipping scheduling", target_time.isoformat()
-            )
-            await self._cancel_timer()
-            return
-
         # Handle revert logic: cancel active preheating only when anticipated start is pushed later
         # by at least the configured tolerance, and only if the new start is still ahead:
         # a start already in the past would restart preheating on the same tick.
@@ -374,11 +367,10 @@ class ScheduleAnticipationActionUseCase:
             await self._clear_state()
             return
 
-        # Delegate to ControlPreheatingUseCase, which refuses a suppressed slot
-        if not await self._control_preheating.start_preheating(
+        # Delegate to ControlPreheatingUseCase
+        await self._control_preheating.start_preheating(
             target_time, target_temp, scheduler_entity_id
-        ):
-            return
+        )
         self._preheating_target_temp = target_temp
 
         _LOGGER.debug("Action triggered successfully")

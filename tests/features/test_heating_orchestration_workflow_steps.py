@@ -5,7 +5,6 @@ Implements BDD steps for testing the HeatingOrchestrator's main workflow:
 - Revert logic when LHS improves
 - IHP enabled/disabled handling
 - Scheduler disabled detection
-- Overshoot prevention coordination
 
 Tests use REAL use cases with MOCKED adapters for true integration testing.
 """
@@ -24,7 +23,6 @@ from custom_components.intelligent_heating_pilot.application.orchestrator import
 )
 from custom_components.intelligent_heating_pilot.application.use_cases import (
     CalculateAnticipationUseCase,
-    CheckOvershootRiskUseCase,
     ControlPreheatingUseCase,
     ScheduleAnticipationActionUseCase,
     UpdateCacheDataUseCase,
@@ -198,22 +196,6 @@ def mock_schedule_anticipation_action(
 
 
 @pytest.fixture
-def mock_check_overshoot_risk(
-    mock_scheduler_reader,
-    mock_environment_reader,
-    mock_climate_data_reader,
-    mock_control_preheating,
-):
-    """Create real CheckOvershootRiskUseCase with mocked dependencies."""
-    return CheckOvershootRiskUseCase(
-        scheduler_reader=mock_scheduler_reader,
-        environment_reader=mock_environment_reader,
-        climate_data_reader=mock_climate_data_reader,
-        control_preheating=mock_control_preheating,
-    )
-
-
-@pytest.fixture
 def mock_update_cache():
     """Mock UpdateCacheDataUseCase."""
     return Mock(spec=UpdateCacheDataUseCase)
@@ -224,17 +206,14 @@ def orchestrator(
     mock_calculate_anticipation,
     mock_control_preheating,
     mock_schedule_anticipation_action,
-    mock_check_overshoot_risk,
     mock_update_cache,
     workflow_context,
 ):
     """Create HeatingOrchestrator with mocked use cases."""
-    workflow_context["mock_check_overshoot_risk"] = mock_check_overshoot_risk
     return HeatingOrchestrator(
         calculate_anticipation=mock_calculate_anticipation,
         control_preheating=mock_control_preheating,
         schedule_anticipation_action=mock_schedule_anticipation_action,
-        check_overshoot_risk=mock_check_overshoot_risk,
         update_cache=mock_update_cache,
     )
 
@@ -519,59 +498,6 @@ def scheduler_is_disabled(mock_scheduler_reader, workflow_context):
     workflow_context["scheduler_disabled"] = True
 
 
-@given("overshoot risk is detected by the overshoot use case")
-def overshoot_risk_detected(
-    workflow_context,
-    mock_scheduler_reader,
-    mock_environment_reader,
-    mock_climate_data_reader,
-    mock_control_preheating,
-):
-    """GIVEN: The overshoot risk checker will determine overshoot is imminent."""
-    workflow_context["overshoot_detected"] = True
-
-    # Configure conditions that will cause overshoot detection:
-    # - High current temperature (20.5°C)
-    # - High heating slope (2.0°C/h)
-    # - Target time in 30 minutes
-    # - projected_temp = 20.5 + (2.0 * 0.5) = 21.5°C >= 21.5°C (overshoot limit)
-
-    target_time = datetime(2025, 2, 10, 7, 30, 0, tzinfo=UTC)
-    current_time = datetime(2025, 2, 10, 7, 0, 0, tzinfo=UTC)
-
-    # Preheating must be active for overshoot check to run
-    mock_control_preheating._is_preheating_active = True
-    mock_control_preheating._preheating_target_time = target_time
-    mock_control_preheating._active_scheduler_entity = workflow_context["scheduler_entity"]
-
-    # Configure scheduler with target
-    timeslot = ScheduledTimeslot(
-        target_time=target_time,
-        target_temp=21.0,
-        scheduler_entity=workflow_context["scheduler_entity"],
-        timeslot_id="test_timeslot",
-    )
-    mock_scheduler_reader.get_next_timeslot.return_value = timeslot
-
-    # Configure environment with high current temp (close to target)
-    environment = EnvironmentState(
-        indoor_temperature=20.5,  # Very close to target
-        outdoor_temp=5.0,
-        indoor_humidity=50.0,
-        timestamp=current_time,
-    )
-    mock_environment_reader.get_current_environment.return_value = environment
-
-    # Configure high heating slope (will cause overshoot projection)
-    mock_climate_data_reader.get_current_slope.return_value = 2.0  # °C/h
-
-
-@given("the room is no longer warming")
-def room_no_longer_warming(mock_climate_data_reader):
-    """GIVEN: A flat slope, so reaching the target early is no overshoot risk."""
-    mock_climate_data_reader.get_current_slope.return_value = 0.0
-
-
 @given("the indoor temperature is unavailable")
 def indoor_temperature_unavailable(
     workflow_context, mock_environment_reader, mock_prediction_service
@@ -671,18 +597,6 @@ def orchestrator_calculates_ihp_enabled(workflow_context):
     with patch("homeassistant.util.dt.now", return_value=workflow_context["current_time"]):
         result = asyncio.run(orchestrator.calculate_and_schedule_anticipation(ihp_enabled=True))
     workflow_context["result"] = result
-
-
-@when("the orchestrator checks for overshoot risk")
-def orchestrator_checks_overshoot(workflow_context):
-    """WHEN: The orchestrator checks for overshoot risk."""
-    orchestrator = workflow_context["orchestrator"]
-    scheduler_entity = workflow_context["scheduler_entity"]
-
-    # Mock dt_util.now() to return controlled time for testing
-    with patch("homeassistant.util.dt.now", return_value=workflow_context["current_time"]):
-        result = asyncio.run(orchestrator.check_and_prevent_overshoot(scheduler_entity))
-    workflow_context["overshoot_result"] = result
 
 
 # ============================================================================
@@ -826,30 +740,7 @@ def any_active_preheating_canceled(mock_control_preheating):
     return
 
 
-@then("preheating should be canceled due to overshoot")
-def preheating_canceled_overshoot(mock_scheduler_commander):
-    """THEN: Preheating was canceled because of overshoot risk."""
-    mock_scheduler_commander.cancel_action.assert_called_once()
-
-
-@then("the system should remain in idle state")
-def system_remains_idle(mock_scheduler_commander, mock_timer_scheduler):
-    """THEN: No changes were made — system stays idle."""
-    # No cancel actions
-    mock_scheduler_commander.cancel_action.assert_not_called()
-    mock_scheduler_commander.run_action.assert_not_called()
-    # No timer scheduled
-    mock_timer_scheduler.schedule_timer.assert_not_called()
-
-
 @then("preheating should still be active")
 def preheating_still_active(mock_control_preheating):
     """THEN: The preheating state was not reset."""
     assert mock_control_preheating.is_preheating_active()
-
-
-@then("preheating should not be restarted")
-def preheating_not_restarted(mock_control_preheating, mock_scheduler_commander):
-    """THEN: The overshoot cancellation sticks until the slot fires."""
-    mock_scheduler_commander.run_action.assert_not_called()
-    assert not mock_control_preheating.is_preheating_active()
