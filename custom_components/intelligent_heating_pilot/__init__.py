@@ -254,7 +254,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             coord = _resolve_coordinator(call.data["entity_id"])
             if coord._orchestrator is None:
                 raise ServiceValidationError("IHP is not initialized yet for this device.")
-            await coord._orchestrator.reset_all_learning_data(device_id=coord.get_device_id())
+            await coord.async_reset_learning()
             _LOGGER.info(
                 "reset_learning: learning data cleared for device %s", coord.get_device_id()
             )

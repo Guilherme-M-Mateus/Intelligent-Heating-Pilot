@@ -114,7 +114,7 @@ class HeatingOrchestrator:
         _LOGGER.debug("Exiting HeatingOrchestrator.disable_preheating()")
 
     async def reset_all_learning_data(self, device_id: str) -> None:
-        """Reset all learned data (LHS + cycles).
+        """Reset all learned data (LHS + cycles + dead time), in storage and memory.
 
         Args:
             device_id: Device identifier
