@@ -6,6 +6,7 @@ import asyncio
 import logging
 from collections.abc import Callable
 from contextlib import suppress
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 from typing import TYPE_CHECKING, cast
 
@@ -230,13 +231,10 @@ class HeatingCycleLifecycleManager:
         _LOGGER.debug("Entering HeatingCycleLifecycleManager.on_retention_change")
         _LOGGER.info("Retention changed to %d days", new_retention_days)
 
-        # Step 1: Update device config retention (immutable, create new instance)
-        self._device_config = DeviceConfig(
-            device_id=self._device_config.device_id,
-            vtherm_entity_id=self._device_config.vtherm_entity_id,
-            scheduler_entities=self._device_config.scheduler_entities,
-            lhs_retention_days=new_retention_days,
-        )
+        # Step 1: Update device config retention (immutable, create new instance).
+        # replace() carries every other field over; rebuilding DeviceConfig by hand
+        # silently reset auto_learning, cycle thresholds and sensor ids to defaults.
+        self._device_config = replace(self._device_config, lhs_retention_days=new_retention_days)
 
         # Step 2: Clear in-memory cache (retention change invalidates all cached data)
         self._cached_cycles_for_target_time = {}
