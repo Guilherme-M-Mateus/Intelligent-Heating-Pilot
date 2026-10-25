@@ -226,6 +226,16 @@ class LhsLifecycleManager:
 
         _LOGGER.debug("Exiting LhsLifecycleManager.startup")
 
+    def invalidate_memory_cache(self) -> None:
+        """Drop the in-memory global and contextual LHS caches.
+
+        Used after a learning reset: the memory cache is read before storage,
+        so without this the old learned values would survive until restart.
+        """
+        _LOGGER.debug("Invalidating LHS in-memory caches")
+        self._cached_global_lhs = None
+        self._cached_contextual_lhs = {}
+
     async def on_retention_change(self, cycles: list[HeatingCycle]) -> None:
         """Handle retention configuration changes.
 

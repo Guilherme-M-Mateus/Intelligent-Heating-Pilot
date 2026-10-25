@@ -16,6 +16,7 @@ if TYPE_CHECKING:
 
     from ...domain.interfaces import IHeatingCycleStorage, ILhsStorage
     from ...domain.value_objects import HeatingCycle, HeatingCycleCacheData
+    from ..heating_cycle_lifecycle_manager import HeatingCycleLifecycleManager
     from ..lhs_lifecycle_manager import LhsLifecycleManager
 
 _LOGGER = logging.getLogger(__name__)
@@ -36,6 +37,7 @@ class UpdateCacheDataUseCase:
         cycle_storage: IHeatingCycleStorage,
         lhs_storage: ILhsStorage,
         lhs_lifecycle_manager: LhsLifecycleManager,
+        heating_cycle_manager: HeatingCycleLifecycleManager,
     ) -> None:
         """Initialize the use case.
 
@@ -43,11 +45,13 @@ class UpdateCacheDataUseCase:
             cycle_storage: Heating cycle cache storage
             lhs_storage: LHS storage for clearing
             lhs_lifecycle_manager: Manages LHS recalculation
+            heating_cycle_manager: Manages cycles (its memory cache is cleared on reset)
         """
         _LOGGER.debug("Initializing UpdateCacheDataUseCase")
         self._cycle_storage = cycle_storage
         self._lhs_storage = lhs_storage
         self._lhs_manager = lhs_lifecycle_manager
+        self._heating_cycle_manager = heating_cycle_manager
 
     async def get_cache_data(self, device_id: str) -> HeatingCycleCacheData | None:
         """Get cache data for a device.
@@ -131,9 +135,12 @@ class UpdateCacheDataUseCase:
         _LOGGER.debug("Exiting UpdateCacheDataUseCase.prune_old_cycles()")
 
     async def reset_cache(self, device_id: str) -> None:
-        """Reset cache completely for a device (both cycles and LHS).
+        """Reset cache completely for a device (cycles, LHS and dead time).
 
-        This deletes all cached cycles and LHS data.
+        This deletes all cached cycles, LHS data and the learned dead time,
+        in storage AND in the lifecycle managers' memory caches. The memory
+        caches are read before storage, so clearing storage alone would leave
+        the old learned values in use until the next restart.
 
         Args:
             device_id: Device identifier
@@ -146,11 +153,17 @@ class UpdateCacheDataUseCase:
 
         # Clear all cycle cache data
         await self._cycle_storage.clear_cache(device_id)
+        self._heating_cycle_manager.invalidate_memory_cache()
         _LOGGER.info("Heating cycle cache has been reset")
 
         # Clear LHS data
         await self._lhs_storage.clear_slope_history()
+        self._lhs_manager.invalidate_memory_cache()
         _LOGGER.info("LHS data has been reset")
+
+        # Clear learned dead time
+        await self._lhs_storage.set_learned_dead_time(None)
+        _LOGGER.info("Learned dead time has been reset")
 
         _LOGGER.info("Cache and LHS have been reset for device %s", device_id)
         _LOGGER.debug("Exiting UpdateCacheDataUseCase.reset_cache()")
