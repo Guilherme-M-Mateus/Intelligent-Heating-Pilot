@@ -231,8 +231,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "Please provide a valid IHP sensor entity ID, for example: "
                 "sensor.intelligent_heating_pilot_<device_name>_anticipated_start_time."
             )
-        coord = hass.data[DOMAIN].get(entity_entry.config_entry_id)
-        if not coord or not isinstance(coord, HeatingApplication):
+        coord: HeatingApplication | None = hass.data[DOMAIN].get(entity_entry.config_entry_id)
+        if not isinstance(coord, HeatingApplication):
             raise ServiceValidationError(
                 f"No IHP device found for entity '{entity_id}' "
                 f"(config_entry_id={entity_entry.config_entry_id}). "
@@ -252,9 +252,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.debug("Entering handle_reset_learning")
 
             coord = _resolve_coordinator(call.data["entity_id"])
-            await coord._orchestrator.reset_all_learning_data(
-                device_id=coord.get_device_id()
-            )
+            if coord._orchestrator is None:
+                raise ServiceValidationError("IHP is not initialized yet for this device.")
+            await coord._orchestrator.reset_all_learning_data(device_id=coord.get_device_id())
             _LOGGER.info(
                 "reset_learning: learning data cleared for device %s", coord.get_device_id()
             )
@@ -306,6 +306,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         target_temp = vtherm_state.attributes.get("temperature")
             if target_temp is not None:
                 target_temp = float(target_temp)
+
+            if device_coordinator._orchestrator is None:
+                raise ServiceValidationError("IHP is not initialized yet for this device.")
 
             # Delegate to orchestrator (pure routing - no business logic)
             anticipation_data = await device_coordinator._orchestrator.calculate_anticipation_only(
