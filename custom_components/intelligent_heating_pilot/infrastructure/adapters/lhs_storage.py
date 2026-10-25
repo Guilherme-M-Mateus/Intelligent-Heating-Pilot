@@ -193,6 +193,18 @@ class HALhsStorage(BaseHAStorageAdapter[dict[str, Any]], ILhsStorage):
         contextual_cache[str(hour)] = self._serialize_lhs_cache_entry(lhs, updated_at)
         await self._save_data()
 
+    async def delete_cached_contextual_lhs(self, hour: int) -> None:
+        """Remove the cached contextual LHS for the given hour, if any."""
+
+        if self._is_caching_disabled():
+            _LOGGER.debug("Caching disabled (retention_days=0), skipping contextual LHS delete")
+            return
+
+        await self._ensure_loaded()
+        contextual_cache = self._data.get("cached_contextual_lhs") or {}
+        if contextual_cache.pop(str(hour), None) is not None:
+            await self._save_data()
+
     async def clear_contextual_cache(self) -> None:
         """Clear all cached contextual LHS entries."""
 

@@ -60,6 +60,10 @@ class InMemoryLhsStorage:
         """Cache a contextual LHS for an hour."""
         self.contextual[hour] = LHSCacheEntry(value=value, updated_at=updated_at, hour=hour)
 
+    async def delete_cached_contextual_lhs(self, hour: int) -> None:
+        """Forget the contextual LHS of an hour."""
+        self.contextual.pop(hour, None)
+
 
 def _build_manager(storage: InMemoryLhsStorage) -> LhsLifecycleManager:
     return LhsLifecycleManager(
@@ -128,6 +132,13 @@ def stored_slope(slot_context: dict, slope: float, slot: str) -> None:
     asyncio.run(slot_context["storage"].set_cached_contextual_lhs(hour, slope, CYCLE_DAY))
 
 
+@given(parsers.parse("a slope of {slope:f} degrees per hour was learned earlier for {slot}"))
+def earlier_learned_slope(slot_context: dict, slope: float, slot: str) -> None:
+    """GIVEN: Storage holds a realistic slope learned from cycles no longer retained."""
+    hour = _at(SLOT_DAY, slot).hour
+    asyncio.run(slot_context["storage"].set_cached_contextual_lhs(hour, slope, CYCLE_DAY))
+
+
 @given("contextual slopes are learned from these cycles")
 def learn_contextual_slopes(slot_context: dict) -> None:
     """GIVEN: The write path persists contextual slopes from the cycles."""
@@ -136,8 +147,9 @@ def learn_contextual_slopes(slot_context: dict) -> None:
 
 @given("Home Assistant restarts")
 def home_assistant_restarts(slot_context: dict) -> None:
-    """GIVEN: A fresh manager with empty memory reads the same storage."""
+    """GIVEN: A fresh manager with empty memory starts up on the same storage."""
     slot_context["manager"] = _build_manager(slot_context["storage"])
+    asyncio.run(slot_context["manager"].startup())
 
 
 @when(parsers.parse("the heating slope for a slot at {slot} is requested"))
@@ -155,6 +167,12 @@ def request_slot_slope(slot_context: dict, slot: str) -> None:
 def slope_returned(slot_context: dict, expected: float) -> None:
     """THEN: The slot uses the slope learned for it."""
     assert slot_context["result"] == pytest.approx(expected, abs=0.01)
+
+
+@then(parsers.parse("no slope is stored for {slot} any more"))
+def no_slope_stored(slot_context: dict, slot: str) -> None:
+    """THEN: Storage no longer holds a contextual slope for the slot hour."""
+    assert _at(SLOT_DAY, slot).hour not in slot_context["storage"].contextual
 
 
 @then("the heating slope returned is not learned from the preheat cycles")

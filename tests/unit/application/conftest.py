@@ -146,6 +146,7 @@ def mock_model_storage() -> Mock:
     # Contextual LHS operations (per hour)
     storage.get_cached_contextual_lhs = AsyncMock(return_value=None)
     storage.set_cached_contextual_lhs = AsyncMock()
+    storage.delete_cached_contextual_lhs = AsyncMock()
     # Cache operations
     storage.set_heating_cycle = AsyncMock()
     storage.set_cache_global_lhs = AsyncMock()

@@ -329,11 +329,9 @@ class HeatingApplication:
         try:
             # Load contextual LHS for all 24 hours
             for hour in range(24):
-                contextual_lhs = await self._lhs_manager.get_contextual_lhs(
-                    target_time=dt_util.now().replace(hour=hour, minute=0, second=0, microsecond=0),
-                    cycles=[],  # Empty cycles - will use stored cache
-                )
-                if contextual_lhs is not None and contextual_lhs != 2.0:  # 2.0 is default value
+                # Only learned values: a global fallback must not show up as contextual
+                contextual_lhs = await self._lhs_manager.get_learned_contextual_lhs(hour)
+                if contextual_lhs is not None:
                     self._contextual_lhs_cache[hour] = contextual_lhs
                     _LOGGER.debug(
                         "Loaded contextual LHS from storage: hour %d = %.2f °C/h",
@@ -526,11 +524,12 @@ class HeatingApplication:
                 if next_schedule_time:
                     scheduled_hour = next_schedule_time.hour
                     try:
-                        contextual_lhs = await self._lhs_manager.get_contextual_lhs(
-                            target_time=next_schedule_time,
-                            cycles=[],  # Empty cycles - will use stored cache
+                        contextual_lhs = await self._lhs_manager.get_learned_contextual_lhs(
+                            scheduled_hour
                         )
-                        if contextual_lhs is not None and contextual_lhs != 2.0:
+                        if contextual_lhs is None:
+                            self._contextual_lhs_cache.pop(scheduled_hour, None)
+                        else:
                             self._contextual_lhs_cache[scheduled_hour] = contextual_lhs
                             _LOGGER.debug(
                                 "Updated contextual LHS cache: hour %d = %.2f °C/h",

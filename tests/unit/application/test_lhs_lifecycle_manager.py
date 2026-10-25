@@ -19,6 +19,9 @@ from custom_components.intelligent_heating_pilot.application.lhs_lifecycle_manag
 from custom_components.intelligent_heating_pilot.domain.constants import (
     DEFAULT_LEARNED_SLOPE,
 )
+from custom_components.intelligent_heating_pilot.domain.value_objects.contextual_lhs_by_hour import (
+    ContextualLHSByHour,
+)
 from custom_components.intelligent_heating_pilot.domain.value_objects.heating import (
     HeatingCycle,
 )
@@ -43,6 +46,7 @@ class TestLhsLifecycleManager:
         storage.set_cached_global_lhs = AsyncMock()
         storage.get_cached_contextual_lhs = AsyncMock(return_value=None)
         storage.set_cached_contextual_lhs = AsyncMock()
+        storage.delete_cached_contextual_lhs = AsyncMock()
         return storage
 
     @pytest.fixture
@@ -58,6 +62,9 @@ class TestLhsLifecycleManager:
         calculator = Mock()
         calculator.calculate_contextual_lhs = Mock(return_value={0: 2.0, 6: 2.5, 12: 3.0})
         calculator.calculate_all_contextual_lhs = Mock(return_value={0: 2.0, 6: 2.5, 12: 3.0})
+        calculator.calculate_contextual_lhs_by_hour = Mock(
+            return_value=ContextualLHSByHour(learned={0: 2.0, 6: 2.5, 12: 3.0})
+        )
         # Configure for per-hour calculation
         calculator.calculate_contextual_lhs_for_hour = Mock(return_value=3.0)
         return calculator
@@ -219,7 +226,9 @@ class TestLhsLifecycleManager:
         mock_global_lhs_calculator.calculate_global_lhs.return_value = 4.2
         # - Contextual calculator returns values for multiple hours
         contextual_values = {0: 2.0, 6: 2.5, 12: 3.0, 18: 2.8}
-        mock_contextual_lhs_calculator.calculate_all_contextual_lhs.return_value = contextual_values
+        mock_contextual_lhs_calculator.calculate_contextual_lhs_by_hour.return_value = (
+            ContextualLHSByHour(learned=contextual_values, rejected_hours=frozenset({22}))
+        )
 
         # WHEN: Retention change is triggered (SINGLE CALL)
         await manager.on_retention_change(cycles)
@@ -232,9 +241,11 @@ class TestLhsLifecycleManager:
         assert call_args[0] == 4.2  # First argument is the LHS value
 
         # THEN Aspect B: Recalculates and persists contextual LHS for all hours
-        mock_contextual_lhs_calculator.calculate_all_contextual_lhs.assert_called_once()
+        mock_contextual_lhs_calculator.calculate_contextual_lhs_by_hour.assert_called_once()
         # AND: Contextual LHS was persisted for each hour
         assert mock_model_storage.set_cached_contextual_lhs.call_count == len(contextual_values)
+        # AND: The rejected hour was removed from storage (#184)
+        mock_model_storage.delete_cached_contextual_lhs.assert_awaited_once_with(22)
 
         # THEN Aspect C: Handles storage updates correctly
         # Storage received updates for both global and contextual LHS
@@ -271,7 +282,9 @@ class TestLhsLifecycleManager:
         mock_global_lhs_calculator.calculate_global_lhs.return_value = 3.8
         # - Contextual calculator returns values
         contextual_values = {0: 2.1, 6: 2.4, 12: 2.9}
-        mock_contextual_lhs_calculator.calculate_all_contextual_lhs.return_value = contextual_values
+        mock_contextual_lhs_calculator.calculate_contextual_lhs_by_hour.return_value = (
+            ContextualLHSByHour(learned=contextual_values, rejected_hours=frozenset({22}))
+        )
 
         # WHEN: 24h timer fires (SINGLE CALL)
         await manager.on_24h_timer(cycles)
@@ -284,9 +297,11 @@ class TestLhsLifecycleManager:
         assert call_args[0] == 3.8  # First argument is the LHS value
 
         # THEN Aspect B: Recalculates and persists contextual LHS
-        mock_contextual_lhs_calculator.calculate_all_contextual_lhs.assert_called_once()
+        mock_contextual_lhs_calculator.calculate_contextual_lhs_by_hour.assert_called_once()
         # AND: Contextual LHS was persisted for each hour
         assert mock_model_storage.set_cached_contextual_lhs.call_count == len(contextual_values)
+        # AND: The rejected hour was removed from storage (#184)
+        mock_model_storage.delete_cached_contextual_lhs.assert_awaited_once_with(22)
 
         # THEN Aspect C: Updates storage with new values
         # Storage received updates for both global and contextual LHS
@@ -590,15 +605,19 @@ class TestLhsLifecycleManager:
             self._create_heating_cycle(base_datetime + timedelta(hours=6)),
         ]
         # - Contextual calculator returns mixed values (some None, some values)
-        contextual_values = {0: 2.0, 6: 2.5, 12: None, 18: 2.8}
-        mock_contextual_lhs_calculator.calculate_all_contextual_lhs.return_value = contextual_values
+        learned = {0: 2.0, 6: 2.5, 18: 2.8}
+        mock_contextual_lhs_calculator.calculate_contextual_lhs_by_hour.return_value = (
+            ContextualLHSByHour(learned=learned)
+        )
 
         # WHEN: update_contextual_lhs_from_cycles is called (SINGLE CALL)
         result = await manager.update_contextual_lhs_from_cycles(cycles)
 
         # THEN Aspect A: Calculates LHS for all hours
-        mock_contextual_lhs_calculator.calculate_all_contextual_lhs.assert_called_once_with(cycles)
-        assert result == contextual_values
+        mock_contextual_lhs_calculator.calculate_contextual_lhs_by_hour.assert_called_once_with(
+            cycles
+        )
+        assert result == {hour: learned.get(hour) for hour in range(24)}
 
         # THEN Aspect B: Persists only non-None values (skips None)
         # Only 3 values persisted (hours 0, 6, 18), not hour 12 (None)
@@ -620,13 +639,14 @@ class TestLhsLifecycleManager:
         # THEN Aspect D: Handles empty cycles gracefully
         # (Tested with separate call to avoid interference)
         empty_cycles = []
-        mock_contextual_lhs_calculator.calculate_all_contextual_lhs.return_value = {}
+        mock_contextual_lhs_calculator.calculate_contextual_lhs_by_hour.return_value = (
+            ContextualLHSByHour()
+        )
 
         result_empty = await manager.update_contextual_lhs_from_cycles(empty_cycles)
 
-        # Empty dict is returned
-        assert isinstance(result_empty, dict)
-        assert len(result_empty) == 0
+        # Every hour is reported without a learned value
+        assert all(value is None for value in result_empty.values())
 
     # ===== Test: ensure_contextual_lhs_populated() - ONE test for ALL scenarios =====
 
@@ -793,6 +813,7 @@ class TestLhsLifecycleManagerLazyLoading:
         storage.set_cached_global_lhs = AsyncMock()
         storage.get_cached_contextual_lhs = AsyncMock(return_value=None)
         storage.set_cached_contextual_lhs = AsyncMock()
+        storage.delete_cached_contextual_lhs = AsyncMock()
         return storage
 
     @pytest.fixture
@@ -808,6 +829,9 @@ class TestLhsLifecycleManagerLazyLoading:
         calculator = Mock()
         calculator.calculate_contextual_lhs = Mock(return_value={0: 2.0, 6: 2.5, 12: 3.0})
         calculator.calculate_all_contextual_lhs = Mock(return_value={0: 2.0, 6: 2.5, 12: 3.0})
+        calculator.calculate_contextual_lhs_by_hour = Mock(
+            return_value=ContextualLHSByHour(learned={0: 2.0, 6: 2.5, 12: 3.0})
+        )
         calculator.calculate_contextual_lhs_for_hour = Mock(return_value=3.0)
         return calculator
 
@@ -1052,64 +1076,6 @@ class TestLhsLifecycleManagerLazyLoading:
         assert result == 2.5
 
     @pytest.mark.asyncio
-    async def test_get_contextual_lhs_returns_global_fallback_if_computed_zero(
-        self,
-        manager: LhsLifecycleManager,
-        mock_model_storage: Mock,
-        mock_contextual_lhs_calculator: Mock,
-        base_datetime: datetime,
-    ) -> None:
-        """Test that get_contextual_lhs() returns global fallback when computed LHS is 0.0.
-
-        A slope of 0.0 is invalid and would block predictions; global LHS must be used instead.
-        """
-        # GIVEN: No cached contextual value in storage
-        mock_model_storage.get_cached_contextual_lhs.return_value = None
-        # GIVEN: Calculator returns 0.0 (invalid slope)
-        mock_contextual_lhs_calculator.calculate_contextual_lhs_for_hour.return_value = 0.0
-        # GIVEN: Global LHS fallback exists
-        mock_model_storage.get_cached_global_lhs.return_value = LHSCacheEntry(
-            value=2.5, updated_at=base_datetime
-        )
-
-        # WHEN: get_contextual_lhs is called
-        target_time = base_datetime.replace(hour=18)
-        cycles = []
-        result = await manager.get_contextual_lhs(target_time, cycles)
-
-        # THEN: Global LHS is returned as fallback
-        assert result == 2.5
-
-    @pytest.mark.asyncio
-    async def test_get_contextual_lhs_returns_global_fallback_if_computed_negative(
-        self,
-        manager: LhsLifecycleManager,
-        mock_model_storage: Mock,
-        mock_contextual_lhs_calculator: Mock,
-        base_datetime: datetime,
-    ) -> None:
-        """Test that get_contextual_lhs() returns global fallback when computed LHS is negative.
-
-        A negative slope is invalid and would block predictions; global LHS must be used instead.
-        """
-        # GIVEN: No cached contextual value in storage
-        mock_model_storage.get_cached_contextual_lhs.return_value = None
-        # GIVEN: Calculator returns -1.0 (invalid slope)
-        mock_contextual_lhs_calculator.calculate_contextual_lhs_for_hour.return_value = -1.0
-        # GIVEN: Global LHS fallback exists
-        mock_model_storage.get_cached_global_lhs.return_value = LHSCacheEntry(
-            value=2.5, updated_at=base_datetime
-        )
-
-        # WHEN: get_contextual_lhs is called
-        target_time = base_datetime.replace(hour=18)
-        cycles = []
-        result = await manager.get_contextual_lhs(target_time, cycles)
-
-        # THEN: Global LHS is returned as fallback
-        assert result == 2.5
-
-    @pytest.mark.asyncio
     async def test_get_contextual_lhs_ignores_unrealistic_stored_value(
         self,
         manager: LhsLifecycleManager,
@@ -1135,9 +1101,17 @@ class TestLhsLifecycleManagerLazyLoading:
         # WHEN: get_contextual_lhs is called
         result = await manager.get_contextual_lhs(base_datetime.replace(hour=18), [])
 
-        # THEN: The global LHS is returned and the stored value is not cached
+        # THEN: The global LHS is returned and the stored value is removed
         assert result == 0.4
         assert 18 not in manager._cached_contextual_lhs
+        mock_model_storage.delete_cached_contextual_lhs.assert_awaited_once_with(18)
+
+        # AND: Later lookups neither read storage nor rescan cycles for that hour
+        mock_model_storage.get_cached_contextual_lhs.reset_mock()
+        mock_contextual_lhs_calculator.calculate_contextual_lhs_for_hour.reset_mock()
+        assert await manager.get_contextual_lhs(base_datetime.replace(hour=18), []) == 0.4
+        mock_model_storage.get_cached_contextual_lhs.assert_not_called()
+        mock_contextual_lhs_calculator.calculate_contextual_lhs_for_hour.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_ensure_contextual_lhs_populated_ignores_unrealistic_stored_value(
@@ -1160,9 +1134,10 @@ class TestLhsLifecycleManagerLazyLoading:
         # WHEN: ensure_contextual_lhs_populated is called for hour 20
         result = await manager.ensure_contextual_lhs_populated(20, [])
 
-        # THEN: The global LHS is returned and nothing is cached for hour 20
+        # THEN: The global LHS is returned and the stored value is removed
         assert result == 0.4
         assert 20 not in manager._cached_contextual_lhs
+        mock_model_storage.delete_cached_contextual_lhs.assert_awaited_once_with(20)
 
     @pytest.mark.asyncio
     async def test_startup_does_not_cache_unrealistic_stored_value(
@@ -1180,8 +1155,53 @@ class TestLhsLifecycleManagerLazyLoading:
         # WHEN: Startup is called
         await manager.startup()
 
-        # THEN: Nothing is cached in memory
+        # THEN: Nothing is cached in memory and the stored value is removed
         assert manager._cached_contextual_lhs == {}
+        mock_model_storage.delete_cached_contextual_lhs.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_forced_recalculation_without_result_forgets_the_hour(
+        self,
+        manager: LhsLifecycleManager,
+        mock_model_storage: Mock,
+        mock_contextual_lhs_calculator: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """A forced recalculation with no contextual result drops the old value for good."""
+        # GIVEN: Hour 20 holds a value learned earlier, already in memory
+        manager._cached_contextual_lhs[20] = 1.5
+        mock_contextual_lhs_calculator.calculate_contextual_lhs_for_hour.return_value = None
+        mock_model_storage.get_cached_global_lhs.return_value = LHSCacheEntry(
+            value=0.4, updated_at=base_datetime
+        )
+
+        # WHEN: The hour is force-recalculated, then looked up normally
+        forced = await manager.ensure_contextual_lhs_populated(20, [], force_recalculate=True)
+        later = await manager.ensure_contextual_lhs_populated(20, [])
+
+        # THEN: Both calls use the global LHS and the hour is removed from storage
+        assert forced == 0.4
+        assert later == 0.4
+        assert 20 not in manager._cached_contextual_lhs
+        mock_model_storage.delete_cached_contextual_lhs.assert_awaited_once_with(20)
+
+    @pytest.mark.asyncio
+    async def test_get_learned_contextual_lhs_does_not_fall_back_to_global(
+        self,
+        manager: LhsLifecycleManager,
+        mock_model_storage: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Callers can tell a learned contextual slope from the global fallback."""
+        # GIVEN: Hour 7 is learned, hour 22 has nothing stored
+        manager._cached_contextual_lhs[7] = 1.8
+        mock_model_storage.get_cached_global_lhs.return_value = LHSCacheEntry(
+            value=0.4, updated_at=base_datetime
+        )
+
+        # WHEN / THEN: Only the learned hour has a value
+        assert await manager.get_learned_contextual_lhs(7) == 1.8
+        assert await manager.get_learned_contextual_lhs(22) is None
 
     @pytest.mark.asyncio
     async def test_ensure_contextual_lhs_populated_lazy_loads_missing_hour(

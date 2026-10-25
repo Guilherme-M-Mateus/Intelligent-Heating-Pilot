@@ -10,7 +10,7 @@ import logging
 from datetime import UTC, tzinfo
 
 from ..constants import MINIMUM_REALISTIC_LHS
-from ..value_objects import HeatingCycle
+from ..value_objects import ContextualLHSByHour, HeatingCycle
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -117,19 +117,9 @@ class ContextualLHSCalculatorService:
         # Filter cycles that reached their target during target hour
         matching_cycles = [c for c in cycles if self.extract_hour_from_cycle(c) == target_hour]
 
-        if not matching_cycles:
-            _LOGGER.debug("No cycles found for hour %d", target_hour)
+        avg_lhs = self._average_heating_slope(matching_cycles, target_hour)
+        if avg_lhs is None:
             return None
-
-        # Filter out non-positive slopes: cycles where temperature didn't rise
-        # carry no useful learning data about heating speed
-        lhs_values = [c.avg_heating_slope for c in matching_cycles if c.avg_heating_slope > 0]
-
-        if not lhs_values:
-            _LOGGER.debug("No cycles with positive heating slope for hour %d", target_hour)
-            return None
-
-        avg_lhs = sum(lhs_values) / len(lhs_values)
 
         if avg_lhs < MINIMUM_REALISTIC_LHS:
             _LOGGER.debug(
@@ -149,6 +139,66 @@ class ContextualLHSCalculatorService:
 
         return avg_lhs
 
+    def calculate_contextual_lhs_by_hour(self, cycles: list[HeatingCycle]) -> ContextualLHSByHour:
+        """Calculate contextual LHS for all 24 hours, keeping rejected hours apart.
+
+        Callers need to know which hours were rejected as unrealistic, because a
+        slope stored for them earlier must be dropped so they use the global LHS.
+        Hours without cycles are neither learned nor rejected.
+
+        Args:
+            cycles: All extracted cycles
+
+        Returns:
+            Realistic averages by hour, and the hours rejected below MINIMUM_REALISTIC_LHS.
+        """
+        _LOGGER.debug("Calculating contextual LHS for all 24 hours from %d cycles", len(cycles))
+
+        learned: dict[int, float] = {}
+        rejected: set[int] = set()
+        for hour, hour_cycles in self.group_cycles_by_hour(cycles).items():
+            avg_lhs = self._average_heating_slope(hour_cycles, hour)
+            if avg_lhs is None:
+                continue
+            if avg_lhs < MINIMUM_REALISTIC_LHS:
+                rejected.add(hour)
+            else:
+                learned[hour] = avg_lhs
+
+        _LOGGER.info(
+            "Contextual LHS learned for %d hours; %d hours rejected below %.2f°C/h %s",
+            len(learned),
+            len(rejected),
+            MINIMUM_REALISTIC_LHS,
+            sorted(rejected),
+        )
+
+        return ContextualLHSByHour(learned=learned, rejected_hours=frozenset(rejected))
+
+    def _average_heating_slope(self, cycles: list[HeatingCycle], hour: int) -> float | None:
+        """Average the positive heating slopes of the cycles of one hour.
+
+        Cycles where temperature did not rise carry no useful learning data
+        about heating speed, so they are left out.
+
+        Args:
+            cycles: Cycles already filtered to the hour
+            hour: Hour (0-23), for logging
+
+        Returns:
+            Average slope in °C/hour, or None if no cycle has a positive slope.
+        """
+        if not cycles:
+            _LOGGER.debug("No cycles found for hour %d", hour)
+            return None
+
+        lhs_values = [c.avg_heating_slope for c in cycles if c.avg_heating_slope > 0]
+        if not lhs_values:
+            _LOGGER.debug("No cycles with positive heating slope for hour %d", hour)
+            return None
+
+        return sum(lhs_values) / len(lhs_values)
+
     def calculate_all_contextual_lhs(self, cycles: list[HeatingCycle]) -> dict[int, float | None]:
         """Calculate contextual LHS for all 24 hours.
 
@@ -156,16 +206,7 @@ class ContextualLHSCalculatorService:
             cycles: All extracted cycles
 
         Returns:
-            Mapping {hour: avg_lhs_value_or_none}
+            Mapping {hour: avg_lhs_value_or_none}. Hours without cycles and
+            hours rejected as unrealistic are both None.
         """
-        _LOGGER.info("Calculating contextual LHS for all 24 hours")
-
-        result = {}
-        for hour in range(24):
-            lhs = self.calculate_contextual_lhs_for_hour(cycles, hour)
-            result[hour] = lhs
-
-        hours_with_data = sum(1 for v in result.values() if v is not None)
-        _LOGGER.info("Contextual LHS calculated for %d hours with data", hours_with_data)
-
-        return result
+        return self.calculate_contextual_lhs_by_hour(cycles).as_hour_map()

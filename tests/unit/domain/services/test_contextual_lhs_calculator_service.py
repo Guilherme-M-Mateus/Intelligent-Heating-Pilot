@@ -444,6 +444,32 @@ class TestContextualLHSCalculatorService:
 
         assert result[7] is None
 
+    def test_contextual_lhs_by_hour_separates_rejected_hours_from_hours_without_cycles(
+        self, service: ContextualLHSCalculatorService, base_datetime: datetime
+    ) -> None:
+        """Rejected hours are reported apart, so callers can drop their stored slope (#184)."""
+        cycles = [
+            self._create_cycle(
+                start_time=base_datetime.replace(hour=6),
+                end_time=base_datetime.replace(hour=7),
+                start_temp=20.0,
+                end_temp=22.0,  # 2.0°C/h
+            ),
+            self._create_cycle(
+                start_time=base_datetime.replace(hour=21),
+                end_time=base_datetime.replace(hour=22),
+                start_temp=20.0,
+                end_temp=20.1,  # 0.1°C/h
+            ),
+        ]
+
+        result = service.calculate_contextual_lhs_by_hour(cycles)
+
+        assert result.learned == {7: pytest.approx(2.0, abs=0.001)}
+        assert result.rejected_hours == frozenset({22})
+        assert result.as_hour_map()[22] is None
+        assert result.as_hour_map()[12] is None
+
     # ===== Helper Methods =====
 
     def _create_cycle(
