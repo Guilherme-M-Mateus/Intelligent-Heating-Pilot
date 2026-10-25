@@ -20,7 +20,7 @@ python = ">=3.13.2,<3.14"
 pycares = "<5"
 
 [tool.poetry.group.dev.dependencies]
-pytest = "^8.2"
+pytest = ">=8.2,<10.0"
 # pytest-asyncio 1.2 is required by HA test plugin
 pytest-asyncio = "^1.2.0"
 pytest-homeassistant-custom-component = "^0.13.0"
