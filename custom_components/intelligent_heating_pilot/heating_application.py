@@ -280,6 +280,8 @@ class HeatingApplication:
             monitored_entities.append(self._humidity_in_id)
         if self._humidity_out_id:
             monitored_entities.append(self._humidity_out_id)
+        if self._temperature_out_id:
+            monitored_entities.append(self._temperature_out_id)
         if self._cloud_cover_id:
             monitored_entities.append(self._cloud_cover_id)
 

@@ -27,6 +27,7 @@ from .const import (
     CONF_SCHEDULER_ENTITIES,
     CONF_TASK_RANGE_DAYS,
     CONF_TEMP_DELTA_THRESHOLD,
+    CONF_TEMPERATURE_OUT_ENTITY,
     CONF_VTHERM_ENTITY,
     DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
     DEFAULT_AUTO_LEARNING,
@@ -147,6 +148,9 @@ class IntelligentHeatingPilotConfigFlow(config_entries.ConfigFlow, domain=DOMAIN
                 ),
                 vol.Optional(CONF_HUMIDITY_OUT_ENTITY): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="sensor", device_class="humidity")
+                ),
+                vol.Optional(CONF_TEMPERATURE_OUT_ENTITY): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor", device_class="temperature")
                 ),
                 vol.Optional(CONF_CLOUD_COVER_ENTITY): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="sensor")
@@ -289,6 +293,7 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
             optional_entity_fields = [
                 CONF_HUMIDITY_IN_ENTITY,
                 CONF_HUMIDITY_OUT_ENTITY,
+                CONF_TEMPERATURE_OUT_ENTITY,
                 CONF_CLOUD_COVER_ENTITY,
             ]
             fields_to_delete = []
@@ -362,6 +367,7 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
         vtherm_val = _opt_or_data(CONF_VTHERM_ENTITY)
         hum_in_val = _opt_or_data(CONF_HUMIDITY_IN_ENTITY)
         hum_out_val = _opt_or_data(CONF_HUMIDITY_OUT_ENTITY)
+        temp_out_val = _opt_or_data(CONF_TEMPERATURE_OUT_ENTITY)
         cloud_val = _opt_or_data(CONF_CLOUD_COVER_ENTITY)
 
         # Build schema dynamically: only set default if value exists and is non-empty
@@ -419,6 +425,17 @@ class IntelligentHeatingPilotOptionsFlow(config_entries.OptionsFlow):
             )
         ] = selector.EntitySelector(
             selector.EntitySelectorConfig(domain="sensor", device_class="humidity")
+        )
+
+        schema_dict[
+            vol.Optional(
+                CONF_TEMPERATURE_OUT_ENTITY,
+                description={"suggested_value": temp_out_val}
+                if temp_out_val and temp_out_val != ""
+                else {},
+            )
+        ] = selector.EntitySelector(
+            selector.EntitySelectorConfig(domain="sensor", device_class="temperature")
         )
 
         schema_dict[
