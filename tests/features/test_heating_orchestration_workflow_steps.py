@@ -13,7 +13,7 @@ Tests use REAL use cases with MOCKED adapters for true integration testing.
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
@@ -566,6 +566,65 @@ def overshoot_risk_detected(
     mock_climate_data_reader.get_current_slope.return_value = 2.0  # °C/h
 
 
+@given("the indoor temperature is unavailable")
+def indoor_temperature_unavailable(
+    workflow_context, mock_environment_reader, mock_prediction_service
+):
+    """GIVEN: The temperature sensor is briefly unavailable (prediction returns 0 minutes)."""
+    mock_environment_reader.get_current_environment.return_value = None
+    target_time = workflow_context["target_time"]
+    mock_prediction_service.predict_heating_time = Mock(
+        return_value=PredictionResult(
+            anticipated_start_time=target_time,
+            estimated_duration_minutes=0.0,
+            learned_heating_slope=2.0,
+            confidence_level=0.0,
+        )
+    )
+
+
+@given("the anticipated start time moves later but stays in the past")
+def anticipated_start_postponed_in_past(
+    workflow_context, mock_environment_reader, mock_prediction_service
+):
+    """GIVEN: The start moves 60 min later (beyond tolerance) but is still before `now`."""
+    postponed_start = datetime(2025, 2, 10, 5, 30, 0, tzinfo=UTC)
+    workflow_context["current_time"] = datetime(2025, 2, 10, 6, 0, 0, tzinfo=UTC)
+    mock_environment_reader.get_current_environment.return_value = EnvironmentState(
+        indoor_temperature=18.0,
+        outdoor_temp=5.0,
+        indoor_humidity=50.0,
+        timestamp=workflow_context["current_time"],
+    )
+    target_time = workflow_context["target_time"]
+    mock_prediction_service.predict_heating_time = Mock(
+        return_value=PredictionResult(
+            anticipated_start_time=postponed_start,
+            estimated_duration_minutes=(target_time - postponed_start).total_seconds() / 60.0,
+            learned_heating_slope=2.0,
+            confidence_level=1.0,
+        )
+    )
+
+
+@given(
+    parsers.parse("the anticipated start for the {hour:d}:{minute:d} slot is already in the past")
+)
+def anticipated_start_past_for_slot(workflow_context, mock_prediction_service, hour, minute):
+    """GIVEN: A recalculation would ask to start preheating for this slot right now."""
+    target_time = datetime(2025, 2, 10, hour, minute, 0, tzinfo=UTC)
+    past_start = target_time - timedelta(minutes=90)
+    workflow_context["current_time"] = target_time - timedelta(minutes=30)
+    mock_prediction_service.predict_heating_time = Mock(
+        return_value=PredictionResult(
+            anticipated_start_time=past_start,
+            estimated_duration_minutes=90.0,
+            learned_heating_slope=2.0,
+            confidence_level=1.0,
+        )
+    )
+
+
 # ============================================================================
 # WHEN Steps — Actions that trigger behavior
 # ============================================================================
@@ -775,3 +834,16 @@ def system_remains_idle(mock_scheduler_commander, mock_timer_scheduler):
     mock_scheduler_commander.run_action.assert_not_called()
     # No timer scheduled
     mock_timer_scheduler.schedule_timer.assert_not_called()
+
+
+@then("preheating should still be active")
+def preheating_still_active(mock_control_preheating):
+    """THEN: The preheating state was not reset."""
+    assert mock_control_preheating.is_preheating_active()
+
+
+@then("preheating should not be restarted")
+def preheating_not_restarted(mock_control_preheating, mock_scheduler_commander):
+    """THEN: The overshoot cancellation sticks until the slot fires."""
+    mock_scheduler_commander.run_action.assert_not_called()
+    assert not mock_control_preheating.is_preheating_active()

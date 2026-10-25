@@ -125,6 +125,7 @@ class CheckOvershootRiskUseCase:
                 overshoot_limit,
             )
             await self._control_preheating.cancel_preheating(scheduler_entity_id)
+            self._control_preheating.suppress_restart(timeslot.target_time)
             _LOGGER.debug("Exiting check_and_prevent_overshoot() -> True")
             return True
 

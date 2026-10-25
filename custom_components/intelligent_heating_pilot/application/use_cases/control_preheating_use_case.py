@@ -39,6 +39,7 @@ class ControlPreheatingUseCase:
         self._is_preheating_active = False
         self._preheating_target_time: datetime | None = None
         self._active_scheduler_entity: str | None = None
+        self._suppressed_target_time: datetime | None = None
 
     async def cancel_preheating(self, scheduler_entity_id: str | None = None) -> None:
         """Cancel active preheating and revert to current scheduled state.
@@ -87,6 +88,30 @@ class ControlPreheatingUseCase:
         _LOGGER.debug("Marking preheating complete (target=%s)", self._preheating_target_time)
         self._is_preheating_active = False
 
+    def suppress_restart(self, target_time: datetime) -> None:
+        """Prevent preheating from restarting for the given slot.
+
+        A safety cancellation (e.g. overshoot risk) must stick until the slot
+        fires; otherwise the next recalculation would see the anticipated start
+        in the past and start preheating again, making the setpoint flap.
+
+        Args:
+            target_time: Target time of the slot whose preheating is suppressed
+        """
+        _LOGGER.info("Suppressing preheating restart until target %s", target_time.isoformat())
+        self._suppressed_target_time = target_time
+
+    def is_restart_suppressed(self, target_time: datetime) -> bool:
+        """Check whether preheating is suppressed for the given slot.
+
+        Args:
+            target_time: Target time of the slot to check
+
+        Returns:
+            True if preheating was cancelled for this slot and must not restart
+        """
+        return self._suppressed_target_time == target_time
+
     async def start_preheating(
         self,
         target_time: datetime,
@@ -119,6 +144,7 @@ class ControlPreheatingUseCase:
         self._is_preheating_active = True
         self._preheating_target_time = target_time
         self._active_scheduler_entity = scheduler_entity_id
+        self._suppressed_target_time = None
 
         _LOGGER.debug("Exiting ControlPreheatingUseCase.start_preheating()")
 
