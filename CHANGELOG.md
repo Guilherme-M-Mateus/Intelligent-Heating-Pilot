@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Fixed
+- **Shell injection in CI workflows** (#194) – Free-text values (`fix_description`, the RC `version` input and pull request branch names) were expanded with `${{ }}` straight into `run:` scripts, so backticks or `$(...)` in them were executed by the runner. In every workflow, event data and step outputs now go through `env:` and are referenced as quoted shell variables. The "next steps" line of the RC summary also had unescaped backticks that ran `integration` and `main` as commands.
+- **Pylint missing from the code quality check** – `pylint` was not a declared dependency, so the `Code Quality` workflow failed with "Command not found: pylint" on every PR. It is now part of the dev dependencies.
+
+### Added
+- **Workflow linting in CI** (#194) – A new `Workflow Lint` workflow runs `actionlint` (syntax and shellcheck on `run:` scripts) and `zizmor` (security audit, including template injection) on pull requests that touch `.github/workflows`.
 - **Release promotion failing before publishing** – The promotion workflow tried to auto-merge its CHANGELOG PR with squash, which the `main` ruleset forbids, and treated that as fatal: the stable release was never created and the RC was left in place (0.6.4 was published by hand). The release is now created first, auto-merge uses a merge commit, and an auto-merge failure only emits a warning.
 
 ## [0.6.4] - 2026-10-24

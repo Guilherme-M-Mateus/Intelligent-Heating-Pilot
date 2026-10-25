@@ -49,6 +49,7 @@ feat: new functionality
 fix: bug fix
 refactor: non-behavioral restructuring
 docs: documentation changes
+ci: GitHub Actions workflows and CI configuration
 ```
 
 ## Related Documentation

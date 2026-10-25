@@ -82,13 +82,13 @@ jobs:
         if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          MYPY_EXIT: ${{ steps.mypy.outputs.exitcode }}
+          PYLINT_EXIT: ${{ steps.pylint.outputs.exitcode }}
+          PYLINT_SCORE: ${{ steps.pylint.outputs.score }}
+          COVERAGE_EXIT: ${{ steps.coverage.outputs.exitcode }}
+          COVERAGE: ${{ steps.coverage.outputs.coverage }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          MYPY_EXIT="${{ steps.mypy.outputs.exitcode }}"
-          PYLINT_EXIT="${{ steps.pylint.outputs.exitcode }}"
-          PYLINT_SCORE="${{ steps.pylint.outputs.score }}"
-          COVERAGE_EXIT="${{ steps.coverage.outputs.exitcode }}"
-          COVERAGE="${{ steps.coverage.outputs.coverage }}"
-
           MESSAGE="## 📊 Code Quality Report\n\n"
 
           # MyPy
@@ -126,17 +126,23 @@ jobs:
           MESSAGE+="*Type checking and linting are informational; failing tests block the PR.*\n"
           MESSAGE+="*Ensure code quality improvements are made before merging to integration.*\n"
 
-          echo -e "$MESSAGE" | gh pr comment ${{ github.event.pull_request.number }} --body-file -
+          echo -e "$MESSAGE" | gh pr comment "$PR_NUMBER" --body-file -
 
       - name: Summary
+        env:
+          MYPY_STATUS: ${{ steps.mypy.outputs.exitcode == '0' && '✅ Passed' || '⚠️ Issues' }}
+          PYLINT_SCORE: ${{ steps.pylint.outputs.score }}
+          COVERAGE: ${{ steps.coverage.outputs.coverage }}
         run: |
           echo "### Code Quality Summary" >> $GITHUB_STEP_SUMMARY
-          echo "- MyPy: ${{ steps.mypy.outputs.exitcode == '0' && '✅ Passed' || '⚠️ Issues' }}" >> $GITHUB_STEP_SUMMARY
-          echo "- Pylint: ${{ steps.pylint.outputs.score }}/10" >> $GITHUB_STEP_SUMMARY
-          echo "- Coverage: ${{ steps.coverage.outputs.coverage }}%" >> $GITHUB_STEP_SUMMARY
+          echo "- MyPy: $MYPY_STATUS" >> $GITHUB_STEP_SUMMARY
+          echo "- Pylint: $PYLINT_SCORE/10" >> $GITHUB_STEP_SUMMARY
+          echo "- Coverage: $COVERAGE%" >> $GITHUB_STEP_SUMMARY
 
       - name: Fail on test failures
         if: steps.coverage.outputs.exitcode != '0'
+        env:
+          PYTEST_EXIT: ${{ steps.coverage.outputs.exitcode }}
         run: |
-          echo "❌ pytest exited with code ${{ steps.coverage.outputs.exitcode }}"
+          echo "❌ pytest exited with code $PYTEST_EXIT"
           exit 1

@@ -73,6 +73,9 @@ jobs:
 
       - name: Build release notes
         id: notes
+        env:
+          TYPE: ${{ steps.target.outputs.type }}
+          VERSION: ${{ steps.target.outputs.version }}
         run: |
           CHANGELOG_CONTENT=$(awk '/^## \[Unreleased\]$/{flag=1;next} flag && /^## \[/{flag=0} flag{print}' CHANGELOG.md | sed '/./,$!d')
 
@@ -83,8 +86,6 @@ jobs:
           fi
 
           echo "skip=false" >> $GITHUB_OUTPUT
-          TYPE="${{ steps.target.outputs.type }}"
-          VERSION="${{ steps.target.outputs.version }}"
 
           if [ "$TYPE" = "rc" ]; then
             {
@@ -116,9 +117,9 @@ jobs:
         if: steps.target.outputs.mode == 'create' && steps.notes.outputs.skip == 'false'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.target.outputs.version }}
+          DEV_TAG: ${{ steps.target.outputs.dev_tag }}
         run: |
-          VERSION="${{ steps.target.outputs.version }}"
-          DEV_TAG="${{ steps.target.outputs.dev_tag }}"
 
           if git rev-parse "$DEV_TAG" >/dev/null 2>&1; then
             echo "Tag $DEV_TAG already exists, updating to current commit"
@@ -141,7 +142,7 @@ jobs:
         if: steps.target.outputs.mode == 'update' && steps.notes.outputs.skip == 'false'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.target.outputs.tag }}
         run: |
-          TAG="${{ steps.target.outputs.tag }}"
           gh release edit "$TAG" --notes-file /tmp/prerelease-notes.md
           echo "✅ Pre-release $TAG updated with latest CHANGELOG"

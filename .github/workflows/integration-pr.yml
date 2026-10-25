@@ -15,10 +15,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Enforce integration-only source branch
+        env:
+          HEAD_REF: ${{ github.head_ref }}
         run: |
-          if [ "${{ github.head_ref }}" != "integration" ]; then
+          if [ "$HEAD_REF" != "integration" ]; then
             echo "❌ Only the 'integration' branch may merge into 'main'."
-            echo "Source branch detected: ${{ github.head_ref }}"
+            echo "Source branch detected: $HEAD_REF"
             exit 1
           fi
           echo "✅ Source branch is 'integration'"
@@ -125,18 +127,21 @@ jobs:
         if: always() && github.head_ref == 'integration'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION_OK: ${{ steps.version-check.outputs.incremented }}
+          HACS_OK: ${{ steps.version-check.outputs.hacs_synced }}
+          CHANGELOG_OK: ${{ steps.changelog-check.outputs.has_content }}
+          PRERELEASE_OK: ${{ steps.prerelease-check.outputs.exists }}
+          OLD_VERSION: ${{ steps.version-check.outputs.old }}
+          NEW_VERSION: ${{ steps.version-check.outputs.new }}
+          RC_TAG: ${{ steps.prerelease-check.outputs.rc_tag }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          VERSION_OK="${{ steps.version-check.outputs.incremented }}"
-          HACS_OK="${{ steps.version-check.outputs.hacs_synced }}"
-          CHANGELOG_OK="${{ steps.changelog-check.outputs.has_content }}"
-          PRERELEASE_OK="${{ steps.prerelease-check.outputs.exists }}"
-
           MESSAGE="## 📋 Checklist de Release
 
           "
 
           if [ "$VERSION_OK" == "true" ]; then
-            MESSAGE+="✅ Version incrémentée (${{ steps.version-check.outputs.old }} → ${{ steps.version-check.outputs.new }})\n"
+            MESSAGE+="✅ Version incrémentée ($OLD_VERSION → $NEW_VERSION)\n"
           else
             MESSAGE+="❌ Version NON incrémentée - veuillez mettre à jour \`manifest.json\` et \`hacs.json\`\n"
           fi
@@ -154,7 +159,7 @@ jobs:
           fi
 
           if [ "$PRERELEASE_OK" == "true" ]; then
-            MESSAGE+="✅ Release candidate \`${{ steps.prerelease-check.outputs.rc_tag }}\` existe\n"
+            MESSAGE+="✅ Release candidate \`$RC_TAG\` existe\n"
           else
             MESSAGE+="⚠️ Aucune release candidate trouvée - créer un RC via le workflow 'Prepare Release Candidate'\n"
           fi
@@ -169,4 +174,4 @@ jobs:
           MESSAGE+="- La pre-release sera supprimée\n"
           MESSAGE+="- HACS détectera la nouvelle version\n"
 
-          echo -e "$MESSAGE" | gh pr comment ${{ github.event.pull_request.number }} --body-file -
+          echo -e "$MESSAGE" | gh pr comment "$PR_NUMBER" --body-file -
