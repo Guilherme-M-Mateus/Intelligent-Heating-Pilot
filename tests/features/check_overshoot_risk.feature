@@ -62,3 +62,11 @@ Feature: Check Overshoot Risk
     When the system checks for overshoot risk
     Then the check should be skipped because target time has passed
     And the method should return False
+
+  Scenario: Indoor temperature unavailable — skip check instead of canceling
+    Given preheating is active for scheduler "switch.living_room_schedule"
+    And the next target is 21°C at 07:00
+    And the current heating slope is 2.0°C per hour
+    When the system checks for overshoot risk
+    Then the check should be skipped
+    And the method should return False

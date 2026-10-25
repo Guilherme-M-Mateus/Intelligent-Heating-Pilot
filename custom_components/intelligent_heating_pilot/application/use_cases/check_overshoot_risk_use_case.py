@@ -83,12 +83,11 @@ class CheckOvershootRiskUseCase:
 
         environment = await self._environment_reader.get_current_environment()
         if not environment:
-            # Safety first: If we can't read temperature, assume overshoot risk
-            _LOGGER.warning("No environment data available - assuming overshoot risk for safety")
-            await self._control_preheating.cancel_preheating(scheduler_entity_id)
-            _LOGGER.info("Cancelled preheating due to missing environment data")
-            _LOGGER.debug("Exiting check_and_prevent_overshoot() -> True")
-            return True
+            # A sensor blip is not evidence of overshoot: cancelling here would revert
+            # the setpoint and the next recalculation would restart it (#182).
+            _LOGGER.debug("Skipping overshoot check - no environment data available")
+            _LOGGER.debug("Exiting check_and_prevent_overshoot() -> False")
+            return False
 
         current_slope = self._climate_data_reader.get_current_slope()
         if current_slope is None or current_slope <= 0.0:
@@ -125,7 +124,7 @@ class CheckOvershootRiskUseCase:
                 overshoot_limit,
             )
             await self._control_preheating.cancel_preheating(scheduler_entity_id)
-            self._control_preheating.suppress_restart(timeslot.target_time)
+            self._control_preheating.suppress_restart(timeslot.target_time, timeslot.target_temp)
             _LOGGER.debug("Exiting check_and_prevent_overshoot() -> True")
             return True
 

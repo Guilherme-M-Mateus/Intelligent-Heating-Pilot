@@ -203,3 +203,40 @@ class TestHeatingOrchestrator:
 
         mock_control_preheating.is_preheating_active.return_value = True
         assert orchestrator.is_preheating_active() is True
+
+    @pytest.mark.asyncio
+    async def test_recalculation_checks_overshoot_for_active_scheduler(
+        self,
+        orchestrator: HeatingOrchestrator,
+        mock_control_preheating: Mock,
+        mock_check_overshoot_risk: Mock,
+        mock_schedule_anticipation_action: Mock,
+    ) -> None:
+        """Each recalculation during a preheat runs the overshoot check (#182)."""
+        mock_schedule_anticipation_action.handle_anticipation_scheduling = AsyncMock()
+        mock_control_preheating.get_active_scheduler_entity = Mock(return_value="schedule.heating")
+        mock_check_overshoot_risk.check_and_prevent_overshoot = AsyncMock(return_value=True)
+
+        await orchestrator.calculate_and_schedule_anticipation(ihp_enabled=True)
+
+        mock_check_overshoot_risk.check_and_prevent_overshoot.assert_awaited_once_with(
+            scheduler_entity_id="schedule.heating"
+        )
+        mock_schedule_anticipation_action.cancel_action.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_recalculation_skips_overshoot_without_scheduler(
+        self,
+        orchestrator: HeatingOrchestrator,
+        mock_control_preheating: Mock,
+        mock_check_overshoot_risk: Mock,
+        mock_schedule_anticipation_action: Mock,
+    ) -> None:
+        """Without any preheat ever started there is nothing to protect."""
+        mock_schedule_anticipation_action.handle_anticipation_scheduling = AsyncMock()
+        mock_control_preheating.get_active_scheduler_entity = Mock(return_value=None)
+        mock_check_overshoot_risk.check_and_prevent_overshoot = AsyncMock()
+
+        await orchestrator.calculate_and_schedule_anticipation(ihp_enabled=True)
+
+        mock_check_overshoot_risk.check_and_prevent_overshoot.assert_not_called()

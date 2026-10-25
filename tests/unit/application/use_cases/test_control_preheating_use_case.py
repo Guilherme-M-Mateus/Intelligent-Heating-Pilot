@@ -160,24 +160,38 @@ class TestControlPreheatingUseCase:
         suppressed_target = datetime(2025, 2, 10, 7, 0, 0)
         next_target = datetime(2025, 2, 10, 18, 0, 0)
 
-        use_case.suppress_restart(suppressed_target)
+        use_case.suppress_restart(suppressed_target, 21.0)
 
-        assert use_case.is_restart_suppressed(suppressed_target)
-        assert not use_case.is_restart_suppressed(next_target)
+        assert use_case.is_restart_suppressed(suppressed_target, 21.0)
+        assert not use_case.is_restart_suppressed(next_target, 21.0)
 
-    @pytest.mark.asyncio
-    async def test_start_preheating_clears_restart_suppression(
+    def test_raising_slot_target_lifts_restart_suppression(
         self,
         use_case: ControlPreheatingUseCase,
     ) -> None:
-        """An explicit start lifts any previous suppression."""
+        """A new target temperature is a new request, so the slot may heat again."""
         target_time = datetime(2025, 2, 10, 7, 0, 0)
-        use_case.suppress_restart(target_time)
 
-        await use_case.start_preheating(
+        use_case.suppress_restart(target_time, 21.0)
+
+        assert not use_case.is_restart_suppressed(target_time, 23.0)
+
+    @pytest.mark.asyncio
+    async def test_start_preheating_is_refused_for_suppressed_slot(
+        self,
+        use_case: ControlPreheatingUseCase,
+        mock_scheduler_commander: Mock,
+    ) -> None:
+        """Every start path honours the suppression, not only the recalculation one."""
+        target_time = datetime(2025, 2, 10, 7, 0, 0)
+        use_case.suppress_restart(target_time, 21.0)
+
+        started = await use_case.start_preheating(
             target_time=target_time,
             target_temp=21.0,
             scheduler_entity_id="schedule.heating",
         )
 
-        assert not use_case.is_restart_suppressed(target_time)
+        assert not started
+        assert not use_case.is_preheating_active()
+        mock_scheduler_commander.run_action.assert_not_called()

@@ -566,6 +566,12 @@ def overshoot_risk_detected(
     mock_climate_data_reader.get_current_slope.return_value = 2.0  # °C/h
 
 
+@given("the room is no longer warming")
+def room_no_longer_warming(mock_climate_data_reader):
+    """GIVEN: A flat slope, so reaching the target early is no overshoot risk."""
+    mock_climate_data_reader.get_current_slope.return_value = 0.0
+
+
 @given("the indoor temperature is unavailable")
 def indoor_temperature_unavailable(
     workflow_context, mock_environment_reader, mock_prediction_service

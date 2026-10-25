@@ -139,7 +139,8 @@ class HeatingOrchestrator:
         This orchestrator method:
         1. Calculates anticipation data
         2. Delegates scheduling decisions to ScheduleAnticipationActionUseCase
-        3. Always returns anticipation data structure
+        3. Checks overshoot risk while preheating is active
+        4. Always returns anticipation data structure
 
         Args:
             ihp_enabled: Whether IHP preheating is enabled
@@ -162,6 +163,12 @@ class HeatingOrchestrator:
             anticipation_data,
             ihp_enabled,
         )
+
+        # Step 3: Recalculations are the only periodic hook during a preheat,
+        # so overshoot is checked here (the use case skips when not preheating).
+        active_scheduler = self._control_preheating.get_active_scheduler_entity()
+        if active_scheduler:
+            await self.check_and_prevent_overshoot(active_scheduler)
 
         _LOGGER.debug("Exiting HeatingOrchestrator.calculate_and_schedule_anticipation() -> data")
         return anticipation_data

@@ -563,7 +563,7 @@ class TestScheduleAnticipationActionStateTransitions:
         target_time = test_now + timedelta(hours=2)
         scheduler_reader.is_scheduler_enabled = AsyncMock(return_value=True)
         schedule_anticipation_action_use_case._control_preheating = control_preheating_use_case
-        control_preheating_use_case.suppress_restart(target_time)
+        control_preheating_use_case.suppress_restart(target_time, 21.0)
 
         with patch.object(dt_util, "now", return_value=test_now):
             for anticipated_start in (
@@ -581,3 +581,92 @@ class TestScheduleAnticipationActionStateTransitions:
         assert not control_preheating_use_case.is_preheating_active()
         timer_scheduler = schedule_anticipation_action_use_case._timer_scheduler
         assert len(timer_scheduler.scheduled_timers) == 0  # type: ignore
+
+    @pytest.mark.asyncio
+    async def test_preheating_for_removed_slot_is_reverted(
+        self,
+        schedule_anticipation_action_use_case: ScheduleAnticipationActionUseCase,
+        control_preheating_use_case,
+        test_now: datetime,
+    ) -> None:
+        """An active preheat is reverted once its slot is no longer the next one.
+
+        GIVEN: Preheating is active for a slot 1 hour ahead
+        WHEN: The next slot becomes another one, already at target
+        THEN: The thermostat is reverted and preheating is inactive
+        """
+        schedule_anticipation_action_use_case._control_preheating = control_preheating_use_case
+
+        with patch.object(dt_util, "now", return_value=test_now):
+            await control_preheating_use_case.start_preheating(
+                target_time=test_now + timedelta(hours=1),
+                target_temp=21.0,
+                scheduler_entity_id="schedule.heating",
+            )
+            control_preheating_use_case._scheduler_commander.cancel_action = AsyncMock()
+
+            await schedule_anticipation_action_use_case.handle_anticipation_scheduling(
+                anticipation_data={
+                    "anticipated_start_time": test_now + timedelta(hours=10),
+                    "next_schedule_time": test_now + timedelta(hours=10),
+                    "next_target_temperature": 19.0,
+                    "scheduler_entity": "schedule.heating",
+                    "anticipation_minutes": 0,
+                    "current_temp": 21.0,
+                },
+                ihp_enabled=True,
+            )
+
+        assert not control_preheating_use_case.is_preheating_active()
+        control_preheating_use_case._scheduler_commander.cancel_action.assert_awaited_once_with(
+            "schedule.heating"
+        )
+
+    @pytest.mark.asyncio
+    async def test_immediate_start_cancels_pending_timer(
+        self,
+        schedule_anticipation_action_use_case: ScheduleAnticipationActionUseCase,
+        control_preheating_use_case,
+        scheduler_reader,
+        test_now: datetime,
+    ) -> None:
+        """A timer left from an earlier calculation must not fire during the preheat."""
+        cancel_timer = Mock()
+        schedule_anticipation_action_use_case._anticipation_timer_cancel = cancel_timer
+        schedule_anticipation_action_use_case._control_preheating = control_preheating_use_case
+        scheduler_reader.is_scheduler_enabled = AsyncMock(return_value=True)
+
+        with patch.object(dt_util, "now", return_value=test_now):
+            await schedule_anticipation_action_use_case.schedule_action(
+                anticipated_start=test_now - timedelta(minutes=5),
+                target_time=test_now + timedelta(hours=1),
+                target_temp=21.0,
+                scheduler_entity_id="schedule.heating",
+                lhs=2.0,
+            )
+
+        cancel_timer.assert_called_once()
+        assert control_preheating_use_case.is_preheating_active()
+
+    @pytest.mark.asyncio
+    async def test_timer_does_not_restart_suppressed_slot(
+        self,
+        schedule_anticipation_action_use_case: ScheduleAnticipationActionUseCase,
+        control_preheating_use_case,
+        scheduler_reader,
+        test_now: datetime,
+    ) -> None:
+        """The timer callback path honours a suppression set after it was scheduled."""
+        target_time = test_now + timedelta(hours=1)
+        schedule_anticipation_action_use_case._control_preheating = control_preheating_use_case
+        scheduler_reader.is_scheduler_enabled = AsyncMock(return_value=True)
+        control_preheating_use_case._scheduler_commander.run_action = AsyncMock()
+        control_preheating_use_case.suppress_restart(target_time, 21.0)
+
+        await schedule_anticipation_action_use_case._trigger_action(
+            target_time, 21.0, "schedule.heating"
+        )
+
+        assert not control_preheating_use_case.is_preheating_active()
+        control_preheating_use_case._scheduler_commander.run_action.assert_not_awaited()
+        assert schedule_anticipation_action_use_case._preheating_target_temp is None

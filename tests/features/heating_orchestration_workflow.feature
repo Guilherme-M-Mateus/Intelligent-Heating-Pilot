@@ -81,6 +81,7 @@ Feature: Heating Orchestration Workflow
     And preheating is currently active for target time 07:00
     And the next timeslot is at 07:00 with target temperature 21°C
     And anticipation calculation returns 0 minutes of anticipation
+    And the room is no longer warming
     When the orchestrator calculates and schedules anticipation
     Then preheating should continue without interruption
     And preheating should still be active
