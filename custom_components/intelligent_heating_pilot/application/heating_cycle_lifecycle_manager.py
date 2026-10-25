@@ -245,6 +245,15 @@ class HeatingCycleLifecycleManager:
 
         _LOGGER.debug("Exiting HeatingCycleLifecycleManager.on_retention_change")
 
+    def invalidate_memory_cache(self) -> None:
+        """Drop the in-memory cycles cache.
+
+        Used after a learning reset: cached cycles would otherwise keep feeding
+        dead-time and LHS learning with data the user asked to forget.
+        """
+        _LOGGER.debug("Invalidating heating cycles in-memory cache")
+        self._cached_cycles_for_target_time = {}
+
     async def get_cycles_for_window(
         self,
         device_id: str,

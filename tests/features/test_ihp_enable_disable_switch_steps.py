@@ -171,6 +171,7 @@ def orchestrator_ihp_switch(mock_adapters_ihp_switch):
         cycle_storage=mock_adapters_ihp_switch["heating_cycle_lifecycle_manager"],
         lhs_storage=mock_adapters_ihp_switch["model_storage"],
         lhs_lifecycle_manager=mock_adapters_ihp_switch["lhs_lifecycle_manager"],
+        heating_cycle_manager=mock_adapters_ihp_switch["heating_cycle_lifecycle_manager"],
     )
 
     orchestrator = HeatingOrchestrator(

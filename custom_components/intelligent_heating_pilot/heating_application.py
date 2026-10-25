@@ -24,6 +24,7 @@ from .application.use_cases import (
     UpdateCacheDataUseCase,
 )
 from .const import CONF_IHP_ENABLED, DECISION_MODE_SIMPLE, DOMAIN, EVENT_DEAD_TIME_UPDATED
+from .domain.constants import DEFAULT_LEARNED_SLOPE
 from .domain.interfaces.device_config_reader_interface import DeviceConfig
 from .domain.services import (
     ContextualLHSCalculatorService,
@@ -262,6 +263,7 @@ class HeatingApplication:
             cycle_storage=self._cycle_storage,
             lhs_storage=self._lhs_storage,
             lhs_lifecycle_manager=self._lhs_manager,
+            heating_cycle_manager=self._heating_cycle_manager,
         )
 
         # Create orchestrator
@@ -559,15 +561,39 @@ class HeatingApplication:
                 event_data,
             )
 
+    async def async_reset_learning(self) -> None:
+        """Reset all learned data and refresh everything derived from it.
+
+        The orchestrator clears storage and the lifecycle managers' caches; the
+        sensor-facing caches held here must be dropped too, otherwise sensors
+        keep showing the old learned values until restart.
+        """
+        _LOGGER.debug("Entering HeatingApplication.async_reset_learning()")
+        if self._orchestrator is None:
+            return
+
+        await self._orchestrator.reset_all_learning_data(device_id=self._device_id)
+
+        self._lhs_cache = DEFAULT_LEARNED_SLOPE
+        self._contextual_lhs_cache = {}
+        self._last_known_dead_time = None
+        self._fire_dead_time_updated_event(None)
+
+        if self._event_bridge is not None:
+            self._event_bridge._request_recalculate()
+
+        _LOGGER.info("[%s] Learning data reset, recalculation requested", self._device_id)
+        _LOGGER.debug("Exiting HeatingApplication.async_reset_learning()")
+
     def _on_extraction_complete(self) -> None:
         """Trigger sensor recalculation after background extraction completes."""
         if self._event_bridge is not None:
             self._event_bridge._request_recalculate()
 
-    def _fire_dead_time_updated_event(self, learned_dead_time: float) -> None:
-        """Publish an event when learned dead time is persisted."""
+    def _fire_dead_time_updated_event(self, learned_dead_time: float | None) -> None:
+        """Publish an event when learned dead time is persisted (None after a reset)."""
         _LOGGER.debug(
-            "Publishing dead time update for entry_id=%s: %.1f minutes",
+            "Publishing dead time update for entry_id=%s: %s minutes",
             self._device_id,
             learned_dead_time,
         )
