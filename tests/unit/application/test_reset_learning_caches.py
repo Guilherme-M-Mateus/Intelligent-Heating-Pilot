@@ -7,6 +7,7 @@ reset had no visible effect until Home Assistant was restarted.
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime
 from unittest.mock import AsyncMock, Mock
 
@@ -17,6 +18,9 @@ from custom_components.intelligent_heating_pilot.application.heating_cycle_lifec
 )
 from custom_components.intelligent_heating_pilot.application.lhs_lifecycle_manager import (
     LhsLifecycleManager,
+)
+from custom_components.intelligent_heating_pilot.application.use_cases import (
+    LearningResetError,
 )
 from custom_components.intelligent_heating_pilot.const import EVENT_DEAD_TIME_UPDATED
 from custom_components.intelligent_heating_pilot.domain.constants import (
@@ -96,6 +100,40 @@ class TestHeatingCycleLifecycleManagerInvalidateMemoryCache:
         assert heating_cycle_manager_minimal._cached_cycles_for_target_time == {}
 
 
+class TestHeatingCycleLifecycleManagerCancelExtraction:
+    """cancel_extraction() must stop every extraction before the reset clears storage."""
+
+    @pytest.mark.asyncio
+    async def test_detached_range_tasks_are_cancelled_and_awaited(
+        self, heating_cycle_manager_minimal: HeatingCycleLifecycleManager
+    ) -> None:
+        """trigger_24h_refresh() detaches its recent-refresh task; it must still be stopped."""
+        detached = asyncio.create_task(asyncio.Event().wait())
+        heating_cycle_manager_minimal._range_tasks.add(detached)
+        detached.add_done_callback(heating_cycle_manager_minimal._range_tasks.discard)
+        heating_cycle_manager_minimal._extraction_task = None
+
+        await heating_cycle_manager_minimal.cancel_extraction()
+
+        assert detached.cancelled()
+        assert heating_cycle_manager_minimal._range_tasks == set()
+        assert heating_cycle_manager_minimal._extraction_queues == []
+
+    @pytest.mark.asyncio
+    async def test_queues_are_asked_to_stop(
+        self, heating_cycle_manager_minimal: HeatingCycleLifecycleManager
+    ) -> None:
+        """Queues get the stop request so a queue between two days does not start the next."""
+        queue = Mock()
+        queue.cancel_queue = AsyncMock()
+        heating_cycle_manager_minimal._extraction_queues = [queue]
+
+        await heating_cycle_manager_minimal.cancel_extraction()
+
+        queue.cancel_queue.assert_awaited_once()
+        assert heating_cycle_manager_minimal._extraction_queue is None
+
+
 @pytest.fixture
 def app_with_stale_caches() -> HeatingApplication:
     """Create a HeatingApplication whose sensor caches hold stale learned values."""
@@ -151,7 +189,63 @@ class TestHeatingApplicationResetLearning:
             EVENT_DEAD_TIME_UPDATED,
             {"entry_id": DEVICE_ID, "learned_dead_time": None},
         )
-        app_with_stale_caches._event_bridge._request_recalculate.assert_called_once()
+        app_with_stale_caches._event_bridge.request_forced_publish.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_caches_refreshed_and_error_raised_when_reset_fails(
+        self, app_with_stale_caches: HeatingApplication
+    ) -> None:
+        """A partial reset still refreshes sensors, which then show what is really stored."""
+        app_with_stale_caches._orchestrator.reset_all_learning_data.side_effect = (
+            LearningResetError(["learned dead time"])
+        )
+        app_with_stale_caches._lhs_storage = Mock()
+        app_with_stale_caches._lhs_storage.get_learned_dead_time = AsyncMock(
+            return_value=STALE_DEAD_TIME
+        )
+
+        with pytest.raises(LearningResetError):
+            await app_with_stale_caches.async_reset_learning()
+
+        assert app_with_stale_caches._contextual_lhs_cache == {}
+        app_with_stale_caches.hass.bus.async_fire.assert_called_once_with(
+            EVENT_DEAD_TIME_UPDATED,
+            {"entry_id": DEVICE_ID, "learned_dead_time": STALE_DEAD_TIME},
+        )
+        app_with_stale_caches._event_bridge.request_forced_publish.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_update_in_flight_cannot_restore_old_dead_time(
+        self, app_with_stale_caches: HeatingApplication
+    ) -> None:
+        """An update computed before the reset finishes first; the reset then wins."""
+        anticipation_started = asyncio.Event()
+        release_anticipation = asyncio.Event()
+
+        async def slow_anticipation(ihp_enabled: bool) -> dict:
+            anticipation_started.set()
+            await release_anticipation.wait()
+            return {"dead_time": STALE_DEAD_TIME + 1}
+
+        app = app_with_stale_caches
+        app._orchestrator.calculate_and_schedule_anticipation = slow_anticipation
+        app._lhs_storage = Mock()
+        app._lhs_storage.set_learned_dead_time = AsyncMock()
+        app._lhs_storage.get_learned_dead_time = AsyncMock(return_value=None)
+        app._lhs_manager = None
+
+        update = asyncio.create_task(app.async_update())
+        await anticipation_started.wait()
+        reset = asyncio.create_task(app.async_reset_learning())
+        await asyncio.sleep(0)
+        app._orchestrator.reset_all_learning_data.assert_not_awaited()
+
+        release_anticipation.set()
+        await asyncio.gather(update, reset)
+
+        app._lhs_storage.set_learned_dead_time.assert_awaited_once_with(STALE_DEAD_TIME + 1)
+        app._orchestrator.reset_all_learning_data.assert_awaited_once()
+        assert app._last_known_dead_time is None
 
     @pytest.mark.asyncio
     async def test_noop_when_not_initialized(
