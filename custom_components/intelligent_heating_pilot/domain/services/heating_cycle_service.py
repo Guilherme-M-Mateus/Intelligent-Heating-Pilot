@@ -493,6 +493,7 @@ class HeatingCycleService(IHeatingCycleService):
         # Calculate dead_time_cycle for this cycle
         dead_time_cycle_minutes = self._calculate_dead_time_cycle(
             start_time=start_time,
+            end_time=end_time,
             start_temp=start_indoor_temp,
             history_data_set=history_data_set,
         )
@@ -587,11 +588,14 @@ class HeatingCycleService(IHeatingCycleService):
                 temp_per_minute * split_duration_minutes
             )
 
-            # Calculate dead_time_cycle only for the first sub-cycle
+            # Calculate dead_time_cycle only for the first sub-cycle. The search is
+            # bounded by the parent cycle end: the first rise may come after the first
+            # sub-cycle ends but still belongs to this heating cycle.
             dead_time_cycle_minutes = None
             if i == 0:
                 dead_time_cycle_minutes = self._calculate_dead_time_cycle(
                     start_time=current_sub_cycle_start_time,
+                    end_time=end_time,
                     start_temp=current_sub_cycle_start_temp,
                     history_data_set=history_data_set,
                 )
@@ -839,6 +843,7 @@ class HeatingCycleService(IHeatingCycleService):
     def _calculate_dead_time_cycle(
         self,
         start_time: datetime,
+        end_time: datetime,
         start_temp: float,
         history_data_set: HistoricalDataSet,
         temp_change_threshold: float = 0.2,
@@ -848,9 +853,12 @@ class HeatingCycleService(IHeatingCycleService):
 
         Dead time is the period from cycle start to the first measurable temperature rise.
         Only positive temperature changes (heating) are considered; decreases return None.
+        The search stops at ``end_time``: a rise after the cycle ended comes from a later
+        heating episode and must not be attributed to this one (issue #185).
 
         Args:
             start_time: When the heating cycle started
+            end_time: When the heating cycle ended; measurements after it are ignored
             start_temp: Initial temperature at cycle start
             history_data_set: Historical temperature data
             temp_change_threshold: Minimum temperature rise to detect (default: 0.2°C, must be
@@ -861,8 +869,8 @@ class HeatingCycleService(IHeatingCycleService):
                 Values above this threshold are considered data artifacts.
 
         Returns:
-            Dead time in minutes, or None if temperature never rises by threshold,
-            no data available, or dead time exceeds maximum threshold
+            Dead time in minutes, or None if temperature never rises by threshold
+            within the cycle, no data available, or dead time exceeds maximum threshold
         """
         indoor_temp_history = history_data_set.data.get(HistoricalDataKey.INDOOR_TEMP, [])
 
@@ -876,6 +884,8 @@ class HeatingCycleService(IHeatingCycleService):
         for measurement in sorted_temps:
             if measurement.timestamp <= start_time:
                 continue
+            if measurement.timestamp > end_time:
+                break
 
             try:
                 current_temp = float(measurement.value)
@@ -904,7 +914,7 @@ class HeatingCycleService(IHeatingCycleService):
             except (ValueError, TypeError):
                 continue
 
-        # If no temperature change detected, cannot determine dead time
+        # If no temperature change detected within the cycle, cannot determine dead time
         return None
 
     def _validate_critical_data(self, history_data_set: HistoricalDataSet) -> None:
