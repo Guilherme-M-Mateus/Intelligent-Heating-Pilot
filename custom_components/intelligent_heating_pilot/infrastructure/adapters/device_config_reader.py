@@ -102,10 +102,11 @@ class HADeviceConfigReader(IDeviceConfigReader):
         temperature_out = self._get_config_value(config, options, CONF_TEMPERATURE_OUT_ENTITY)
         cloud_cover = self._get_config_value(config, options, CONF_CLOUD_COVER_ENTITY)
 
-        # Support backward compatibility: CONF_DATA_RETENTION_DAYS takes precedence, fallback to CONF_LHS_RETENTION_DAYS
-        data_retention = self._get_config_value(config, options, CONF_DATA_RETENTION_DAYS)
+        # CONF_LHS_RETENTION_DAYS is the only key the config and options forms write, so it must
+        # win; CONF_DATA_RETENTION_DAYS is only a fallback for legacy entries (#186)
+        data_retention = self._get_config_value(config, options, CONF_LHS_RETENTION_DAYS)
         if data_retention is None:
-            data_retention = self._get_config_value(config, options, CONF_LHS_RETENTION_DAYS)
+            data_retention = self._get_config_value(config, options, CONF_DATA_RETENTION_DAYS)
         lhs_retention_days = int(
             data_retention if data_retention is not None else DEFAULT_LHS_RETENTION_DAYS
         )
