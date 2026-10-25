@@ -101,6 +101,9 @@ class HAEventBridge:
         # Deduplication: remember the last event data that was published so we
         # can skip firing when nothing meaningful has changed.
         self._last_published_data: dict | None = None
+        # Set when sensors must re-read the coordinator even if the anticipation
+        # itself did not change (e.g. after a learning reset).
+        self._force_next_publish = False
 
         # Monitored values last acted on, per (entity_id, value key). Comparing to
         # these rather than to the previous state lets a slow drift add up.
@@ -163,6 +166,16 @@ class HAEventBridge:
             self._request_recalculate()
         elif not meaningful:
             _LOGGER.debug("Entity %s change not actionable, skipping recalculation", entity_id)
+
+    def request_forced_publish(self) -> None:
+        """Recalculate and publish the next event even if nothing changed.
+
+        Sensors such as the LHS ones read their value from the coordinator and
+        only refresh on this event, so after a learning reset the event must
+        not be dropped as a duplicate.
+        """
+        self._force_next_publish = True
+        self._request_recalculate()
 
     def _request_recalculate(self) -> None:
         """Request a recalculation with coalescing.
@@ -453,7 +466,8 @@ class HAEventBridge:
                 "scheduler_entity": None,
             }
 
-        if self._is_meaningful_change_from_last(event_data):
+        if self._force_next_publish or self._is_meaningful_change_from_last(event_data):
+            self._force_next_publish = False
             self._hass.bus.async_fire(
                 "intelligent_heating_pilot_anticipation_calculated",
                 event_data,

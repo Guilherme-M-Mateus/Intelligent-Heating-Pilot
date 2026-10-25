@@ -519,6 +519,25 @@ class TestRecalculateAndPublishDeduplication:
         bridge._hass.bus.async_fire.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_forced_publish_fires_identical_data_once(self):
+        """After a learning reset, sensors must refresh even if the anticipation is unchanged."""
+        data = self._anticipation_data()
+        bridge = self._bridge_with_orchestrator(data)
+        await bridge._recalculate_and_publish()
+        bridge._hass.bus.async_fire.reset_mock()
+
+        bridge.request_forced_publish()
+        bridge._hass.async_create_task.assert_called_once()
+        bridge._hass.async_create_task.call_args.args[0].close()
+        await bridge._recalculate_and_publish()
+        bridge._hass.bus.async_fire.assert_called_once()
+
+        # The flag is consumed: the next identical event is deduplicated again
+        bridge._hass.bus.async_fire.reset_mock()
+        await bridge._recalculate_and_publish()
+        bridge._hass.bus.async_fire.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_partial_data_only_fires_once_when_identical(self):
         """With None/partial data, only the first event fires."""
         bridge = self._bridge_with_orchestrator(None)
