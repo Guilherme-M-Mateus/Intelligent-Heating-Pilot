@@ -13,6 +13,7 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.util import dt as dt_util
 
@@ -57,45 +58,61 @@ async def async_setup_entry(
     async_add_entities(sensors, True)
 
 
+def _build_device_info(config_entry: ConfigEntry, name: str) -> DeviceInfo:
+    """Return the device info shared by every IHP entity of a config entry.
+
+    All entities register the same device identifiers, so they must also agree
+    on its name and model or the device registry flips between their values.
+    """
+    return DeviceInfo(
+        identifiers={(DOMAIN, config_entry.entry_id)},
+        name=name,
+        manufacturer="Intelligent Heating Pilot",
+        model="Intelligent Preheating with ML",
+    )
+
+
 class IntelligentHeatingPilotSensorBase(SensorEntity):
     """Base class for Intelligent Heating Pilot sensors."""
 
     _attr_has_entity_name = True
+    # Sensors that apply their own change threshold write state themselves.
+    _writes_own_state = False
 
     def __init__(self, coordinator: Any, config_entry: ConfigEntry, name: str) -> None:
         """Initialize the sensor."""
         self.coordinator = coordinator
         self._config_entry = config_entry
-        self._attr_device_info = {
-            "identifiers": {(DOMAIN, config_entry.entry_id)},
-            "name": name,
-            "manufacturer": "Intelligent Heating Pilot",
-            "model": "Intelligent Preheating with ML",
-        }
+        self._attr_device_info = _build_device_info(config_entry, name)
 
     async def async_added_to_hass(self) -> None:
         """Register callbacks when entity is added."""
         await super().async_added_to_hass()
-
-        @callback
-        def handle_anticipation_event(event):
-            """Handle anticipation calculated event."""
-            data = event.data or {}
-            # Filter events to only those coming from our own config entry
-            if data.get("entry_id") != self._config_entry.entry_id:
-                return
-            old_value = self.native_value
-            self._handle_anticipation_result(data)
-            # Only write HA state when the sensor value actually changed to
-            # avoid unnecessary state-machine writes and log noise.
-            if self.native_value != old_value:
-                self.async_write_ha_state()
-
         self.async_on_remove(
             self.hass.bus.async_listen(
-                f"{DOMAIN}_anticipation_calculated", handle_anticipation_event
+                f"{DOMAIN}_anticipation_calculated", self._handle_anticipation_event
             )
         )
+
+    @callback
+    def _handle_anticipation_event(self, event: Any) -> None:
+        """Handle anticipation calculated event."""
+        data = event.data or {}
+        # Filter events to only those coming from our own config entry
+        if data.get("entry_id") != self._config_entry.entry_id:
+            return
+        old_state = self._state_snapshot()
+        self._handle_anticipation_result(data)
+        if self._writes_own_state:
+            return
+        # Only write HA state when the value or an attribute changed, to
+        # avoid unnecessary state-machine writes without hiding attribute updates.
+        if self._state_snapshot() != old_state:
+            self.async_write_ha_state()
+
+    def _state_snapshot(self) -> tuple[Any, dict[str, Any]]:
+        """Return the value and attributes as last shown, to detect a change."""
+        return self.native_value, dict(self.extra_state_attributes or {})
 
     def _handle_anticipation_result(self, data: dict) -> None:
         """Handle new anticipation result. Override in subclasses."""
@@ -137,9 +154,10 @@ class IntelligentHeatingPilotAnticipationTimeSensor(IntelligentHeatingPilotSenso
         # This sets the sensor to 'unknown' state and clears all attributes
         anticipated_start = data.get(ATTR_ANTICIPATED_START_TIME)
         if anticipated_start is None:
+            if self._anticipated_start is not None:
+                _LOGGER.info("Anticipated start time cleared (scheduler disabled or no timeslot)")
             self._anticipated_start = None
             self._attributes = {}
-            _LOGGER.info("Anticipated start time cleared (scheduler disabled or no timeslot)")
             return
 
         if anticipated_start:
@@ -236,6 +254,7 @@ class IntelligentHeatingPilotGlobalLearnedSlopeSensor(IntelligentHeatingPilotSen
     """Sensor for global learned heating slope (LHS)."""
 
     _attr_name = "Global Learned Heating Slope"
+    _writes_own_state = True
     _attr_native_unit_of_measurement = "°C/h"
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:chart-line"
@@ -286,6 +305,7 @@ class IntelligentHeatingPilotContextualLearnedSlopeSensor(IntelligentHeatingPilo
     """Sensor for contextual learned heating slope (for current hour)."""
 
     _attr_name = "Contextual Learned Heating Slope"
+    _writes_own_state = True
     _attr_native_unit_of_measurement = "°C/h"
 
     _attr_icon = "mdi:chart-line"
@@ -422,9 +442,10 @@ class IntelligentHeatingPilotNextScheduleSensor(IntelligentHeatingPilotSensorBas
         # Check if scheduler is disabled or no timeslot is available
         next_schedule = data.get(ATTR_NEXT_SCHEDULE_TIME)
         if next_schedule is None:
+            if self._next_schedule is not None:
+                _LOGGER.info("Next schedule time cleared (scheduler disabled or no timeslot)")
             self._next_schedule = None
             self._attributes = {}
-            _LOGGER.info("Next schedule time cleared (scheduler disabled or no timeslot)")
             return
 
         if next_schedule:
@@ -539,9 +560,10 @@ class IntelligentHeatingPilotPredictionConfidenceSensor(IntelligentHeatingPilotS
         # Clear when no confidence level is available
         confidence = data.get("confidence_level")
         if confidence is None:
+            if self._confidence is not None:
+                _LOGGER.info("Prediction confidence cleared (scheduler disabled or no timeslot)")
             self._confidence = None
             self._attributes = {}
-            _LOGGER.info("Prediction confidence cleared (scheduler disabled or no timeslot)")
             return
 
         confidence_value = float(confidence)
@@ -584,13 +606,7 @@ class IntelligentHeatingPilotDeadTimeSensor(SensorEntity):
         self._config_entry = config_entry
         self._attr_unique_id = f"{config_entry.entry_id}_dead_time"
 
-        # Device info
-        self._attr_device_info = {
-            "identifiers": {("intelligent_heating_pilot", config_entry.entry_id)},
-            "name": f"Intelligent Heating Pilot {name}",
-            "manufacturer": "Intelligent Heating Pilot",
-            "model": "IHP",
-        }
+        self._attr_device_info = _build_device_info(config_entry, name)
 
         self._dead_time: float | None = None
 

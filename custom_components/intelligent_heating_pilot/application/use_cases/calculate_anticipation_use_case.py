@@ -239,6 +239,8 @@ class CalculateAnticipationUseCase:
             timeslot_id=timeslot_id,
             scheduler_entity=scheduler_entity,
             dead_time=dead_time,
+            humidity=humidity,
+            cloud_coverage=cloud_coverage,
         )
 
         _LOGGER.debug("Exiting calculate_anticipation_datas() -> %s", "data")
@@ -256,6 +258,8 @@ class CalculateAnticipationUseCase:
         timeslot_id: str | None = None,
         scheduler_entity: str | None = None,
         dead_time: float | None = None,
+        humidity: float | None = None,
+        cloud_coverage: float | None = None,
     ) -> dict:
         """Create data structure with provided values or None defaults.
 
@@ -272,6 +276,8 @@ class CalculateAnticipationUseCase:
             "timeslot_id": timeslot_id,
             "scheduler_entity": scheduler_entity,
             "dead_time": dead_time,
+            "humidity": humidity,
+            "cloud_coverage": cloud_coverage,
         }
 
     async def _get_persisted_dead_time_or_default(self) -> float:

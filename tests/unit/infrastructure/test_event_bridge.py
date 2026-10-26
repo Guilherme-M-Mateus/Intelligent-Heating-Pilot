@@ -396,6 +396,21 @@ class TestIsMeaningfulChangeFromLast:
         new_data["learned_heating_slope"] = 2.0 + 0.01  # below threshold
         assert bridge._is_meaningful_change_from_last(new_data) is False
 
+    def test_confidence_only_change_is_meaningful(self):
+        """A confidence change alone must be republished, or its sensor goes stale."""
+        bridge = _make_bridge()
+        bridge._last_published_data = self._base_data()
+        new_data = dict(self._base_data())
+        new_data["confidence_level"] = 0.8 + 0.02  # above threshold
+        assert bridge._is_meaningful_change_from_last(new_data) is True
+
+    def test_confidence_change_below_threshold_is_not_meaningful(self):
+        bridge = _make_bridge()
+        bridge._last_published_data = self._base_data()
+        new_data = dict(self._base_data())
+        new_data["confidence_level"] = 0.8 + 0.001  # below threshold
+        assert bridge._is_meaningful_change_from_last(new_data) is False
+
     def test_anticipated_start_change_above_tolerance_is_meaningful(self):
         """Change >= 60 s in anticipated_start_time must be considered meaningful."""
         bridge = _make_bridge()
