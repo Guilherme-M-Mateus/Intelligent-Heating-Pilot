@@ -130,6 +130,53 @@ def test_is_heating_active_false_when_not_heating_mode(
     assert reader.is_heating_active() is False
 
 
+def test_get_target_temperature_returns_float(
+    mock_hass: Mock, recorder_queue: RecorderAccessQueue
+) -> None:
+    """Return the VTherm's current target temperature."""
+    vtherm_state = _make_state(state_value="heat", attributes={"temperature": 20.0})
+    mock_hass.states.get.return_value = vtherm_state
+
+    reader = HAClimateDataReader(mock_hass, recorder_queue, "climate.vtherm")
+
+    assert reader.get_target_temperature() == 20.0
+
+
+def test_get_target_temperature_returns_none_when_entity_unavailable(
+    mock_hass: Mock, recorder_queue: RecorderAccessQueue
+) -> None:
+    """Return None when the VTherm entity cannot be read."""
+    mock_hass.states.get.return_value = None
+
+    reader = HAClimateDataReader(mock_hass, recorder_queue, "climate.vtherm")
+
+    assert reader.get_target_temperature() is None
+
+
+def test_get_target_temperature_returns_none_when_attribute_missing(
+    mock_hass: Mock, recorder_queue: RecorderAccessQueue
+) -> None:
+    """Return None when the target temperature attribute is absent."""
+    vtherm_state = _make_state(state_value="heat", attributes={})
+    mock_hass.states.get.return_value = vtherm_state
+
+    reader = HAClimateDataReader(mock_hass, recorder_queue, "climate.vtherm")
+
+    assert reader.get_target_temperature() is None
+
+
+def test_get_target_temperature_returns_none_on_invalid_value(
+    mock_hass: Mock, recorder_queue: RecorderAccessQueue
+) -> None:
+    """Return None when the target temperature attribute is not numeric."""
+    vtherm_state = _make_state(state_value="heat", attributes={"temperature": "bad"})
+    mock_hass.states.get.return_value = vtherm_state
+
+    reader = HAClimateDataReader(mock_hass, recorder_queue, "climate.vtherm")
+
+    assert reader.get_target_temperature() is None
+
+
 def test_is_heating_active_false_when_at_or_above_target(
     mock_hass: Mock, recorder_queue: RecorderAccessQueue
 ) -> None:

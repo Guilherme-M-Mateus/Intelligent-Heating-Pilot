@@ -157,7 +157,13 @@ class IntelligentHeatingPilotAnticipationTimeSensor(IntelligentHeatingPilotSenso
             if self._anticipated_start is not None:
                 _LOGGER.info("Anticipated start time cleared (scheduler disabled or no timeslot)")
             self._anticipated_start = None
-            self._attributes = {}
+            # scheduler_blocked/blocked_schedulers must survive here too: this is
+            # exactly the branch hit when every configured scheduler was confirmed
+            # blocked this cycle (#64) - the household must see it without reading logs.
+            self._attributes = {
+                "scheduler_blocked": data.get("scheduler_blocked", False),
+                "blocked_schedulers": data.get("blocked_schedulers", []),
+            }
             return
 
         if anticipated_start:
@@ -190,6 +196,8 @@ class IntelligentHeatingPilotAnticipationTimeSensor(IntelligentHeatingPilotSenso
                 "scheduler_entity": data.get("scheduler_entity"),
                 ATTR_LEARNED_HEATING_SLOPE: data.get(ATTR_LEARNED_HEATING_SLOPE),
                 "confidence_level": data.get("confidence_level"),  # Phase 4: New from domain
+                "scheduler_blocked": data.get("scheduler_blocked", False),
+                "blocked_schedulers": data.get("blocked_schedulers", []),
             }
             _LOGGER.info(
                 "Anticipated start time updated: %s (confidence: %.2f)",
