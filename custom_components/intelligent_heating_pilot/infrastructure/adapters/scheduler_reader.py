@@ -98,18 +98,15 @@ class HASchedulerReader(ISchedulerReader):
                     )
                 continue
 
-            # Native HA schedule entities (schedule.*) use next_event and state-aware logic
-            if entity_id.startswith("schedule."):
-                next_time, target_temp = self._extract_native_schedule_data(state)
-            else:
-                # Skip disabled HACS schedulers (state is "off")
-                if state.state == "off":
-                    device_name = get_entity_name(self._hass, entity_id)
-                    _LOGGER.debug("[%s] Scheduler is disabled (state: off), skipping", device_name)
-                    continue
-
-                # Extract next trigger time and target temperature (HACS format)
-                next_time, target_temp = self._extract_timeslot_data(state)
+            try:
+                next_time, target_temp = self._read_scheduler_timeslot(entity_id, state)
+            except Exception:  # noqa: BLE001 - one malformed scheduler must not block the others
+                _LOGGER.warning(
+                    "[%s] Could not read the next timeslot of this scheduler, skipping it",
+                    get_entity_name(self._hass, entity_id),
+                    exc_info=True,
+                )
+                continue
 
             if next_time and target_temp is not None:
                 # Keep track of the earliest timeslot
@@ -141,6 +138,35 @@ class HASchedulerReader(ISchedulerReader):
             "No valid scheduler timeslot found (check scheduler configuration and preset temperatures)"
         )
         return None
+
+    def _read_scheduler_timeslot(
+        self, entity_id: str, state: State
+    ) -> tuple[datetime | None, float | None]:
+        """Read the next timeslot of one scheduler entity.
+
+        Kept separate from get_next_timeslot so that an unexpected attribute
+        layout in one scheduler can be caught per entity instead of aborting
+        the scan of all configured schedulers.
+
+        Args:
+            entity_id: Scheduler entity ID
+            state: Home Assistant state of that scheduler entity
+
+        Returns:
+            Tuple of (next_time, target_temp), both None for a disabled scheduler
+        """
+        # Native HA schedule entities (schedule.*) use next_event and state-aware logic
+        if entity_id.startswith("schedule."):
+            return self._extract_native_schedule_data(state)
+
+        # Skip disabled HACS schedulers (state is "off")
+        if state.state == "off":
+            device_name = get_entity_name(self._hass, entity_id)
+            _LOGGER.debug("[%s] Scheduler is disabled (state: off), skipping", device_name)
+            return None, None
+
+        # Extract next trigger time and target temperature (HACS format)
+        return self._extract_timeslot_data(state)
 
     def _extract_timeslot_data(self, state: State) -> tuple[datetime | None, float | None]:
         """Extract next trigger time and target temperature from scheduler state.
@@ -236,11 +262,18 @@ class HASchedulerReader(ISchedulerReader):
     def _extract_from_next_entries(self, attrs: dict) -> tuple[datetime | None, float | None]:
         """Extract time and temperature from next_entries fallback format.
 
+        Only the legacy layout, where each entry is a dict carrying its own time
+        and actions, holds data here. scheduler-component publishes next_entries
+        as a list of timeslot indices (ints); such an index points into the same
+        actions list already read through next_slot by the standard path, so it
+        cannot yield anything new and is ignored.
+
         Args:
             attrs: Scheduler entity attributes
 
         Returns:
-            Tuple of (next_time, target_temp)
+            Tuple of (next_time, target_temp), (None, None) when the first entry
+            is not a dict
         """
         next_entries = attrs.get("next_entries")
 
@@ -248,6 +281,9 @@ class HASchedulerReader(ISchedulerReader):
             return None, None
 
         entry = next_entries[0]
+        if not isinstance(entry, dict):
+            _LOGGER.debug("next_entries holds no timeslot details (first entry: %r)", entry)
+            return None, None
 
         # Extract time
         time_raw = entry.get("time") or entry.get("start") or entry.get("trigger_time")

@@ -327,17 +327,19 @@ class HeatingApplication:
             return
 
         try:
-            # Load contextual LHS for all 24 hours
+            # Rebuilt from scratch so hours no longer learned drop out of the cache
+            contextual_cache: dict[int, float] = {}
             for hour in range(24):
                 # Only learned values: a global fallback must not show up as contextual
                 contextual_lhs = await self._lhs_manager.get_learned_contextual_lhs(hour)
                 if contextual_lhs is not None:
-                    self._contextual_lhs_cache[hour] = contextual_lhs
+                    contextual_cache[hour] = contextual_lhs
                     _LOGGER.debug(
                         "Loaded contextual LHS from storage: hour %d = %.2f °C/h",
                         hour,
                         contextual_lhs,
                     )
+            self._contextual_lhs_cache = contextual_cache
         except Exception as exc:  # noqa: BLE001
             _LOGGER.warning("Failed to load contextual LHS cache: %s", exc, exc_info=True)
 
@@ -570,20 +572,39 @@ class HeatingApplication:
         sensor-facing caches held here must be dropped too, otherwise sensors
         keep showing the old learned values until restart. They are refreshed
         even when part of the reset failed, so sensors show what is really
-        stored; the error is then raised to the caller.
+        stored; the error is then raised to the caller. Cycle extraction is then
+        relaunched so the learned data is rebuilt from history.
         """
         _LOGGER.debug("Entering HeatingApplication.async_reset_learning()")
         if self._orchestrator is None:
             return
 
-        async with self._learning_lock:
-            try:
-                await self._orchestrator.reset_all_learning_data(device_id=self._device_id)
-            finally:
-                await self._refresh_after_reset()
+        try:
+            async with self._learning_lock:
+                try:
+                    await self._orchestrator.reset_all_learning_data(device_id=self._device_id)
+                finally:
+                    await self._refresh_after_reset()
+        finally:
+            # Outside the lock: the extraction runs in the background and its
+            # completion path must not wait on the reset.
+            await self._relaunch_extraction_after_reset()
 
         _LOGGER.info("[%s] Learning data reset, recalculation requested", self._device_id)
         _LOGGER.debug("Exiting HeatingApplication.async_reset_learning()")
+
+    async def _relaunch_extraction_after_reset(self) -> None:
+        """Relearn from history right away instead of waiting for the next 24h refresh.
+
+        The reset cancelled any running extraction and forgot the explored days, so
+        without this the LHS and dead time stayed at their defaults for up to a day.
+        Also run after a partial reset: only days no longer marked as explored are
+        extracted, which can only bring the learned data back in line with history.
+        If the deferred startup extraction is still to come, it finds the same days
+        already being extracted and does not launch them again.
+        """
+        _LOGGER.info("[%s] Relaunching cycle extraction after learning reset", self._device_id)
+        await self.async_initialize_cycle_extraction()
 
     async def _refresh_after_reset(self) -> None:
         """Reload sensor-facing caches from the managers and force a sensor refresh."""
@@ -603,9 +624,21 @@ class HeatingApplication:
             self._event_bridge.request_forced_publish()
 
     def _on_extraction_complete(self) -> None:
-        """Trigger sensor recalculation after background extraction completes."""
+        """Refresh sensors once a background extraction has updated the learned data.
+
+        The extraction recalculates the global and contextual LHS in storage, but
+        the sensors read the caches held here; without reloading them the sensors
+        kept showing the old values (2.0 after a reset) until Home Assistant restarted.
+        """
+        self.hass.async_create_task(self._refresh_after_extraction())
+
+    async def _refresh_after_extraction(self) -> None:
+        """Reload the LHS caches, then recalculate and publish so sensors read them."""
+        await self.refresh_caches()
+        # Forced: an unchanged anticipation would otherwise be dropped as a duplicate
+        # and the LHS sensors, which only refresh on that event, would stay stale.
         if self._event_bridge is not None:
-            self._event_bridge._request_recalculate()
+            self._event_bridge.request_forced_publish()
 
     def _fire_dead_time_updated_event(self, learned_dead_time: float | None) -> None:
         """Publish an event when learned dead time is persisted (None after a reset)."""
@@ -623,10 +656,10 @@ class HeatingApplication:
         )
 
     async def refresh_caches(self) -> None:
-        """Refresh cached LHS value used by sensors.
+        """Refresh the global and contextual LHS caches used by sensors.
 
-        Called by sensors after an anticipation event to keep LHS in sync
-        when the event publication bypasses the coordinator's async_update path.
+        Called whenever learned data changes outside the coordinator's
+        async_update path (cycle extraction, learning reset, LHS update).
         """
         if self._lhs_manager is None:
             return
@@ -635,6 +668,7 @@ class HeatingApplication:
             self._lhs_cache = await self._lhs_manager.get_global_lhs()
         except Exception:  # noqa: BLE001
             _LOGGER.debug("Failed to refresh LHS cache", exc_info=True)
+        await self._load_contextual_lhs_cache()
 
     # Sensor accessors (synchronous for sensor entities)
 
@@ -643,34 +677,20 @@ class HeatingApplication:
         return self._lhs_cache
 
     def get_contextual_learned_heating_slope(self, hour: int) -> float | None:
-        """Get contextual LHS for a specific hour (from cache).
+        """Get the learned contextual LHS for a specific hour (from cache).
 
-        This returns the contextual LHS from the synchronously-accessible cache.
-        Falls back to global LHS if no contextual data is available for the hour.
+        Only values actually learned for the hour are returned. There is
+        deliberately no fallback to the global LHS: the contextual sensor must
+        show unknown rather than present the global slope as hour-specific
+        (#226). Anticipation does its own fallback via LhsLifecycleManager.
 
         Args:
             hour: Hour of day (0-23)
 
         Returns:
-            Contextual LHS for the hour, or global LHS as fallback
+            Learned contextual LHS for the hour, or None if none was learned
         """
-        if hour < 0 or hour > 23:
-            return self.get_learned_heating_slope()
-
-        try:
-            # Check contextual LHS cache first
-            if hour in self._contextual_lhs_cache:
-                contextual_value = self._contextual_lhs_cache[hour]
-                # Return None only if truly no data (None in cache means no contextual data for this hour)
-                if contextual_value is None:
-                    return self.get_learned_heating_slope()  # Fallback to global
-                return contextual_value
-
-            # Not in cache, fallback to global LHS
-            return self.get_learned_heating_slope()
-        except Exception:  # noqa: BLE001
-            _LOGGER.debug("Failed to get LHS for hour %d", hour, exc_info=True)
-            return self.get_learned_heating_slope()
+        return self._contextual_lhs_cache.get(hour)
 
     def is_ihp_enabled(self) -> bool:
         """Get IHP enabled state."""

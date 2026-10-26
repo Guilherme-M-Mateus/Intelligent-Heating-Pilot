@@ -37,14 +37,14 @@ IHP computes the Learned Heating Slope from detected heating cycles:
    - Temperature gain = end temp − start temp
    - Duration = end time − start time (minus dead time, see below)
    - Cycle slope = (temperature gain ÷ effective duration hours)
-4. **Apply filters**: reject cycles with non-positive slopes and very short effective heating windows
+4. **Apply filters**: reject cycles that heated too slowly (below 0.2 °C/h) and very short effective heating windows
 5. **Average the slopes** across filtered cycles to produce the current LHS.
 
 ### Two Types of LHS
 
 IHP uses two complementary approaches:
 
-**Global LHS** — Simple average of ALL positive-slope cycles regardless of time of day
+**Global LHS** — Simple average of all realistic cycles (slope of at least 0.2 °C/h) regardless of time of day; if no cycle qualifies, the 2.0 °C/h default is used
 - Used as a fallback when no contextual data is available
 - Represents your system's "typical" heating performance
 
@@ -75,7 +75,9 @@ For the system structure and DDD boundaries behind these calculations, see [Arch
 
 Before a cycle contributes to LHS:
 
-1. **Non-positive slope filter**: Cycles where temperature didn't rise (or fell) are discarded — they contain no useful heating data
+1. **Minimum realistic slope filter**: Cycles that heated slower than 0.2 °C/h are discarded from both the global and the per-hour LHS
+   - Why? A cycle where the temperature didn't rise, or barely rose (e.g. thermostat in safety mode or load shedding), says nothing about how fast the room can actually heat, and would make preheating start far too early
+   - If every cycle of an hour is below the threshold, that hour has no learned value and falls back to the global LHS
 2. **Minimum effective duration filter**: Cycles whose effective heating window (after subtracting dead time) is too short are rejected
    - Why? When dead time ≈ total duration, the slope formula amplifies noise by orders of magnitude (e.g., 100,000°C/h)
    - Default threshold: 5 minutes of effective heating required

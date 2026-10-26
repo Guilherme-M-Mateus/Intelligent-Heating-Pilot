@@ -114,6 +114,10 @@ class HeatingCycleLifecycleManager:
         # Every per-range run_queue() task, including those detached by
         # trigger_24h_refresh(), so cancel_extraction() can stop all of them.
         self._range_tasks: set[asyncio.Task] = set()
+        # Date ranges claimed by the extraction being launched or running. A second
+        # launch for ranges already claimed is skipped: after a learning reset, the
+        # deferred startup extraction would otherwise cancel and redo the reset's one.
+        self._active_ranges: list[tuple[date, date]] = []
 
     async def refresh_heating_cycle_cache(self) -> None:
         """Refresh the heating cycle cache and schedule the next 24h timer.
@@ -175,6 +179,7 @@ class HeatingCycleLifecycleManager:
 
             if pruned:
                 _LOGGER.debug("Cycles pruned — recalculating LHS and dead time")
+                self.invalidate_memory_cache()
                 try:
                     cache_data = await self._heating_cycle_storage.get_cache_data(
                         self._device_config.device_id
@@ -205,11 +210,11 @@ class HeatingCycleLifecycleManager:
 
         # Step 5: Launch async extraction for missing ranges only
         if missing_ranges:
-            await self._launch_extraction_for_ranges(missing_ranges)
-            _LOGGER.info(
-                "Cache refresh: launched async extraction for %d missing range(s)",
-                len(missing_ranges),
-            )
+            if await self._launch_extraction_for_ranges(missing_ranges):
+                _LOGGER.info(
+                    "Cache refresh: launched async extraction for %d missing range(s)",
+                    len(missing_ranges),
+                )
         else:
             _LOGGER.info("Cache refresh: cache is up to date, no extraction needed")
 
@@ -245,6 +250,15 @@ class HeatingCycleLifecycleManager:
         await self.refresh_heating_cycle_cache()
 
         _LOGGER.debug("Exiting HeatingCycleLifecycleManager.on_retention_change")
+
+    @property
+    def device_id(self) -> str:
+        """Return the id cycles are stored under: the config entry id, not the VTherm entity id.
+
+        Readers must use this id, since cycles stored for the device are
+        invisible under any other key.
+        """
+        return self._device_config.device_id
 
     def invalidate_memory_cache(self) -> None:
         """Drop the in-memory cycles cache.
@@ -541,6 +555,7 @@ class HeatingCycleLifecycleManager:
                 _LOGGER.warning("Error awaiting cancelled extraction task: %s", exc)
         self._range_tasks.clear()
         self._extraction_task = None
+        self._active_ranges = []
 
         _LOGGER.debug("Exiting HeatingCycleLifecycleManager.cancel_extraction")
 
@@ -599,6 +614,8 @@ class HeatingCycleLifecycleManager:
                     len(cycles),
                     search_end_time,
                 )
+                # Cycles read for a target date were cached before these ones existed.
+                self.invalidate_memory_cache()
 
                 # Load ALL cycles from cache for LHS recalculation.
                 # get_cache_data() is cache-only (no Recorder calls).
@@ -743,6 +760,8 @@ class HeatingCycleLifecycleManager:
                 self._extraction_task.cancel()
                 with suppress(asyncio.CancelledError):
                     await self._extraction_task
+            # The cancelled extraction no longer covers its ranges.
+            self._active_ranges = []
 
             self._extraction_task = asyncio.create_task(self._extraction_queue.run_queue())
             self._range_tasks.add(self._extraction_task)
@@ -941,23 +960,73 @@ class HeatingCycleLifecycleManager:
 
         return missing_ranges
 
+    def _ranges_in_progress(self, ranges: list[tuple[date, date]]) -> bool:
+        """Return True when every range lies inside a range already being extracted."""
+        return all(
+            any(
+                active_start <= start and end <= active_end
+                for active_start, active_end in self._active_ranges
+            )
+            for start, end in ranges
+        )
+
+    def _release_active_ranges(self, claimed: list[tuple[date, date]]) -> None:
+        """Drop the claim of a finished launch, unless a newer launch replaced it."""
+        if self._active_ranges is claimed:
+            self._active_ranges = []
+
     async def _launch_extraction_for_ranges(
         self,
         missing_ranges: list[tuple[date, date]],
-    ) -> None:
+    ) -> bool:
         """Launch async extraction for the given date ranges.
 
         Cancels any running extraction, then creates one RecordingExtractionQueue
         per missing range and calls populate_queue() once per range. All queues
         are launched concurrently as a single background asyncio gather task.
 
+        Ranges already covered by the extraction in progress are not relaunched:
+        cancelling it to redo the same days would only waste Recorder queries.
+
         Args:
             missing_ranges: List of (start_date, end_date) ranges to extract.
+
+        Returns:
+            True when a new extraction was launched.
         """
         if not missing_ranges:
             _LOGGER.debug("No missing date ranges – skipping extraction launch")
-            return
+            return False
 
+        if self._ranges_in_progress(missing_ranges):
+            _LOGGER.info(
+                "Extraction of %s already in progress for device=%s, not relaunched",
+                missing_ranges,
+                self._device_config.device_id,
+            )
+            return False
+
+        # Claimed before the first await so a concurrent launch sees it.
+        claimed = list(missing_ranges)
+        self._active_ranges = claimed
+        try:
+            await self._start_range_queues(missing_ranges, claimed)
+        except BaseException:
+            self._release_active_ranges(claimed)
+            raise
+        return True
+
+    async def _start_range_queues(
+        self,
+        missing_ranges: list[tuple[date, date]],
+        claimed: list[tuple[date, date]],
+    ) -> None:
+        """Cancel the running extraction, then start one queue per range.
+
+        Args:
+            missing_ranges: List of (start_date, end_date) ranges to extract.
+            claimed: The claim released once every queue has finished.
+        """
         # Cancel all existing queues gracefully
         queues_to_cancel = self._extraction_queues or (
             [self._extraction_queue] if self._extraction_queue is not None else []
@@ -1015,6 +1084,7 @@ class HeatingCycleLifecycleManager:
             await asyncio.gather(*tasks, return_exceptions=True)
 
         self._extraction_task = asyncio.create_task(_wait_all_ranges(range_tasks))
+        self._extraction_task.add_done_callback(lambda _task: self._release_active_ranges(claimed))
 
         # Yield control to allow each run_queue() task to begin processing
         await asyncio.sleep(0)
