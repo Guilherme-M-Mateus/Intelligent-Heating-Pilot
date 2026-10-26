@@ -19,6 +19,8 @@ A configuration dialog will appear. Here's what you need:
 | **VTherm Entity** | ✅ Yes | Your Versatile Thermostat climate entity | Go to **Devices** → Find your thermostat → Copy entity name (e.g., `climate.living_room`) |
 | **Scheduler Entity** | ⚠️ Optional | HACS Scheduler switch(es) that control the VTherm | Go to **Devices** → Find your scheduler → Copy entity name (e.g., `switch.schedule_heating`) |
 
+> **Native Home Assistant schedules**: a `schedule.*` helper can be selected instead of a HACS Scheduler switch. It only tells IHP when the next ON block starts, so IHP computes the anticipated start and the next target from the VTherm **comfort** preset temperature (20 °C if the comfort preset is not set) and exposes them as sensors. IHP does **not** start the heating itself for a native schedule: actual preheating is delegated to HACS Scheduler, which a native schedule does not have. To get real preheating, use a HACS Scheduler switch, or build your own automation on the anticipated start sensor (see [Using IHP Without a Scheduler](#using-ihp-without-a-scheduler)).
+
 > **New in v0.5.0+**: The Scheduler Entity is now **optional**. See [Using IHP Without a Scheduler](#using-ihp-without-a-scheduler) below.
 
 ### Step 3: (Optional) Add Environmental Sensors

@@ -225,6 +225,8 @@ class HAEventBridge:
 
         - The enabled / disabled state (on / off) toggled.
         - The ``next_trigger`` timestamp changed (different upcoming slot).
+        - The ``next_event`` timestamp changed (native ``schedule.*`` entities,
+          e.g. tomorrow's ON time moved while the schedule is off).
         - The ``actions`` attribute changed (different target temperature / preset).
         """
         old_state = event.data.get("old_state")
@@ -242,6 +244,9 @@ class HAEventBridge:
 
         # Next occurrence time changed
         if old_attrs.get("next_trigger") != new_attrs.get("next_trigger"):
+            return True
+
+        if old_attrs.get("next_event") != new_attrs.get("next_event"):
             return True
 
         # Target temperature / actions changed
