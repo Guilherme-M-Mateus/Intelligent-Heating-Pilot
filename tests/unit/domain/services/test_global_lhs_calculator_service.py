@@ -320,8 +320,9 @@ class TestGlobalLHSCalculatorService:
         cycles = [
             self._create_cycle(
                 start_time=base_datetime,
-                start_temp=20.0,
-                end_temp=20.0 + MINIMUM_REALISTIC_LHS,
+                # Start from 0 so the slope is exactly the threshold (no float rounding)
+                start_temp=0.0,
+                end_temp=MINIMUM_REALISTIC_LHS,
             ),
         ]
 
