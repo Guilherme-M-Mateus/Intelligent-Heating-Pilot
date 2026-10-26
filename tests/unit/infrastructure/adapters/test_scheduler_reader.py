@@ -1,7 +1,8 @@
 """Tests for HASchedulerReader adapter."""
 
+import logging
 from datetime import UTC, datetime
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 import pytest
 
@@ -232,6 +233,142 @@ async def test_get_next_timeslot_all_disabled(mock_hass: Mock) -> None:
 
     # Assert: should return None since all schedulers are disabled
     assert result is None
+
+
+def _hacs_state(entity_id: str, attributes: dict) -> Mock:
+    """Build an enabled HACS scheduler state with the given attributes."""
+    state = Mock()
+    state.entity_id = entity_id
+    state.state = "on"
+    state.attributes = attributes
+    return state
+
+
+def test_extract_from_next_entries_ignores_integer_indices(reader: HASchedulerReader) -> None:
+    """scheduler-component publishes next_entries as timeslot indices (ints) (#189)."""
+    attrs = {"next_entries": [0, 1, 2]}
+
+    assert reader._extract_from_next_entries(attrs) == (None, None)
+
+
+@pytest.mark.parametrize("entry", ["07:00", None, 1.5, ["time"]])
+def test_extract_from_next_entries_ignores_non_dict_entries(
+    reader: HASchedulerReader, entry: object
+) -> None:
+    """Any non-dict first entry is ignored instead of raising AttributeError."""
+    assert reader._extract_from_next_entries({"next_entries": [entry]}) == (None, None)
+
+
+def test_extract_from_next_entries_dict_entry_still_supported(reader: HASchedulerReader) -> None:
+    """The legacy dict layout of next_entries keeps working."""
+    attrs = {
+        "next_entries": [
+            {
+                "time": "2024-01-15T07:00:00+01:00",
+                "actions": [{"service": "climate.set_temperature", "data": {"temperature": 20.5}}],
+            }
+        ]
+    }
+
+    next_time, target_temp = reader._extract_from_next_entries(attrs)
+
+    assert next_time == datetime.fromisoformat("2024-01-15T07:00:00+01:00")
+    assert target_temp == 20.5
+
+
+@pytest.mark.asyncio
+async def test_get_next_timeslot_integer_next_entries_without_temperature(
+    reader: HASchedulerReader, mock_hass: Mock
+) -> None:
+    """A slot without resolvable temperature plus int next_entries is skipped, not a crash."""
+    mock_hass.states.get.return_value = _hacs_state(
+        "switch.heating_schedule",
+        {
+            "next_trigger": "2024-01-15T07:00:00+01:00",
+            "next_slot": 0,
+            "next_entries": [0, 1],
+            "actions": [{"service": "climate.set_hvac_mode", "data": {"hvac_mode": "heat"}}],
+        },
+    )
+
+    assert await reader.get_next_timeslot() is None
+
+
+@pytest.mark.asyncio
+async def test_get_next_timeslot_integer_next_entries_does_not_block_other_schedulers(
+    mock_hass: Mock,
+) -> None:
+    """A scheduler with int next_entries and no temperature does not hide the others (#189)."""
+    reader = HASchedulerReader(mock_hass, ["switch.unresolvable", "switch.valid"])
+    states = {
+        "switch.unresolvable": _hacs_state(
+            "switch.unresolvable",
+            {
+                "next_trigger": "2024-01-15T06:00:00+01:00",
+                "next_slot": 0,
+                "next_entries": [0],
+                "actions": [
+                    {"service": "climate.set_preset_mode", "data": {"preset_mode": "unknown"}}
+                ],
+            },
+        ),
+        "switch.valid": _hacs_state(
+            "switch.valid",
+            {
+                "next_trigger": "2024-01-15T07:00:00+01:00",
+                "next_slot": 0,
+                "next_entries": [0],
+                "actions": [{"service": "climate.set_temperature", "data": {"temperature": 21.0}}],
+            },
+        ),
+    }
+    mock_hass.states.get.side_effect = states.get
+
+    result = await reader.get_next_timeslot()
+
+    assert result is not None
+    assert result.scheduler_entity == "switch.valid"
+    assert result.target_temp == 21.0
+
+
+@pytest.mark.asyncio
+async def test_get_next_timeslot_isolates_unexpected_scheduler_error(
+    mock_hass: Mock, caplog: pytest.LogCaptureFixture
+) -> None:
+    """An unexpected error while reading one scheduler is logged and the others are still used."""
+    reader = HASchedulerReader(mock_hass, ["switch.broken", "switch.valid"])
+    broken_state = _hacs_state("switch.broken", {"friendly_name": "Broken"})
+    valid_state = _hacs_state(
+        "switch.valid",
+        {
+            "next_trigger": "2024-01-15T07:00:00+01:00",
+            "next_slot": 0,
+            "actions": [{"service": "climate.set_temperature", "data": {"temperature": 21.0}}],
+        },
+    )
+    mock_hass.states.get.side_effect = {
+        "switch.broken": broken_state,
+        "switch.valid": valid_state,
+    }.get
+    original_extract = reader._extract_timeslot_data
+
+    def extract(state: Mock) -> tuple[datetime | None, float | None]:
+        if state is broken_state:
+            raise AttributeError("unexpected attribute layout")
+        return original_extract(state)
+
+    with (
+        patch.object(reader, "_extract_timeslot_data", side_effect=extract),
+        caplog.at_level(logging.WARNING),
+    ):
+        result = await reader.get_next_timeslot()
+
+    assert result is not None
+    assert result.scheduler_entity == "switch.valid"
+    assert any(
+        record.levelno == logging.WARNING and "Broken" in record.getMessage()
+        for record in caplog.records
+    )
 
 
 def test_extract_temp_from_action_direct(reader: HASchedulerReader) -> None:

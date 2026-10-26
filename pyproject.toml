@@ -27,7 +27,7 @@ pytest-homeassistant-custom-component = "^0.13.0"
 pytest-bdd = ">=7.2,<10.0"  # BDD support with Gherkin
 ruff = ">=0.6,<0.18"
 mypy = "^1.10"
-types-setuptools = "^68.0.0"
+types-setuptools = ">=68,<85"
 pysqlite3-binary = "^0.5.4.post2"
 pre-commit = ">=3.5,<5.0"
 bandit = {extras = ["toml"], version = "^1.7.5"}
