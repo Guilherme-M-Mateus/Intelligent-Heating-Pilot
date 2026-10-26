@@ -302,7 +302,7 @@ cycles = await update_cycles_for_window(device_id, start_time, end_time)
 |------------------------|---------------------------------------------------------------------------|
 | **Heating Cycle**      | A complete heating event: start time, end time, temperature rise          |
 | **LHS**                | Learned Heating Slope (rate of temperature increase in °C/hour)           |
-| **Global LHS**         | Average LHS across all heating cycles (time-agnostic)                     |
+| **Global LHS**         | Average LHS across realistic heating cycles (>= MINIMUM_REALISTIC_LHS, time-agnostic) |
 | **Contextual LHS**     | Hour-specific LHS (e.g., 8am vs 2pm may have different rates)             |
 | **Retention Window**   | Number of historical days used for LHS calculation (e.g., 30 days)        |
 | **Cascade Update**     | Automatic propagation of cycle changes to dependent LHS caches            |

@@ -47,3 +47,11 @@ Feature: Scheduled slots use the heating slope learned for them
     When the heating slope for a slot at 22:00 is requested
     Then the heating slope returned is 0.4 degrees per hour
     And no slope is stored for 22:00 any more
+
+  Scenario: Cycles that barely heated do not drag the global slope down
+    Given a slow cycle from 21:00 to 22:00 that heated at 0.15 degrees per hour
+    And a slow cycle from 22:00 to 23:00 that heated at 0.1 degrees per hour
+    And the global slope is learned from these cycles
+    And contextual slopes are learned from these cycles
+    When the heating slope for a slot at 22:00 is requested
+    Then the heating slope returned is 2.67 degrees per hour
