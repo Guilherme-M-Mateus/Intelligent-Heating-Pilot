@@ -8,11 +8,15 @@ reset had no visible effect until Home Assistant was restarted.
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
-from unittest.mock import AsyncMock, Mock
+from collections.abc import Iterator
+from datetime import date, datetime
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 
+from custom_components.intelligent_heating_pilot.application import (
+    heating_cycle_lifecycle_manager as lifecycle_module,
+)
 from custom_components.intelligent_heating_pilot.application.heating_cycle_lifecycle_manager import (
     HeatingCycleLifecycleManager,
 )
@@ -258,3 +262,180 @@ class TestHeatingApplicationResetLearning:
 
         assert app_with_stale_caches._lhs_cache == STALE_GLOBAL_LHS
         app_with_stale_caches.hass.bus.async_fire.assert_not_called()
+
+
+class TestHeatingApplicationRelaunchesExtractionAfterReset:
+    """A reset forgets the explored days; extraction must rebuild them right away.
+
+    Before the fix, a device whose startup extraction had already found its cache
+    up to date stayed at the default LHS and dead time until the next 24h refresh.
+    """
+
+    @pytest.fixture
+    def app(self, app_with_stale_caches: HeatingApplication) -> HeatingApplication:
+        """Attach a cycle manager to the stale application."""
+        app_with_stale_caches._heating_cycle_manager = Mock()
+        app_with_stale_caches._heating_cycle_manager.refresh_heating_cycle_cache = AsyncMock()
+        return app_with_stale_caches
+
+    @pytest.mark.asyncio
+    async def test_extraction_relaunched_after_reset(self, app: HeatingApplication) -> None:
+        """The startup extraction window is requested again once the reset is done."""
+        await app.async_reset_learning()
+
+        app._heating_cycle_manager.refresh_heating_cycle_cache.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_extraction_relaunched_after_partial_reset(self, app: HeatingApplication) -> None:
+        """Only unexplored days are extracted, so relearning is safe after a partial reset."""
+        app._orchestrator.reset_all_learning_data.side_effect = LearningResetError(["LHS"])
+        app._lhs_storage = Mock()
+        app._lhs_storage.get_learned_dead_time = AsyncMock(return_value=None)
+
+        with pytest.raises(LearningResetError):
+            await app.async_reset_learning()
+
+        app._heating_cycle_manager.refresh_heating_cycle_cache.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_extraction_relaunched_outside_learning_lock(
+        self, app: HeatingApplication
+    ) -> None:
+        """Holding the lock would block every anticipation update during the launch."""
+        lock_states: list[bool] = []
+
+        async def record_lock_state() -> None:
+            lock_states.append(app._learning_lock.locked())
+
+        app._heating_cycle_manager.refresh_heating_cycle_cache.side_effect = record_lock_state
+
+        await app.async_reset_learning()
+
+        assert lock_states == [False]
+
+    @pytest.mark.asyncio
+    async def test_not_relaunched_when_extraction_disabled(self, app: HeatingApplication) -> None:
+        """A zero history lookback disables extraction, reset included."""
+        app._data_retention_days = 0
+
+        await app.async_reset_learning()
+
+        app._heating_cycle_manager.refresh_heating_cycle_cache.assert_not_awaited()
+
+
+class _BlockingQueue:
+    """RecordingExtractionQueue stand-in whose run lasts until ``finish`` is set."""
+
+    instances: list[_BlockingQueue] = []
+    finish: asyncio.Event
+
+    def __init__(self, **_kwargs: object) -> None:
+        self.populate_queue = AsyncMock(return_value=1)
+        self.cancel_queue = AsyncMock()
+        _BlockingQueue.instances.append(self)
+
+    async def run_queue(self) -> None:
+        await _BlockingQueue.finish.wait()
+
+
+@pytest.fixture
+def blocking_queue() -> Iterator[type[_BlockingQueue]]:
+    """Replace the extraction queue so launches can be counted and held open."""
+    _BlockingQueue.instances = []
+    _BlockingQueue.finish = asyncio.Event()
+    with patch.object(lifecycle_module, "RecordingExtractionQueue", _BlockingQueue):
+        yield _BlockingQueue
+    _BlockingQueue.finish.set()
+
+
+class TestExtractionNotLaunchedTwice:
+    """The reset relaunch and the deferred startup extraction must not both run.
+
+    The startup extraction runs 3 to 11 minutes after Home Assistant starts. If a
+    reset already relaunched extraction for the same window, the startup one must
+    leave it running instead of cancelling it and redoing the same days.
+    """
+
+    @pytest.mark.asyncio
+    async def test_second_refresh_keeps_running_extraction(
+        self,
+        heating_cycle_manager_with_cache: HeatingCycleLifecycleManager,
+        blocking_queue: type[_BlockingQueue],
+    ) -> None:
+        """Reset relaunch, then startup refresh: one extraction, never cancelled."""
+        manager = heating_cycle_manager_with_cache
+
+        await manager.refresh_heating_cycle_cache()
+        await manager.refresh_heating_cycle_cache()
+
+        assert len(blocking_queue.instances) == 1
+        blocking_queue.instances[0].cancel_queue.assert_not_awaited()
+        await manager.cancel_extraction()
+
+    @pytest.mark.asyncio
+    async def test_concurrent_refreshes_launch_once(
+        self,
+        heating_cycle_manager_with_cache: HeatingCycleLifecycleManager,
+        blocking_queue: type[_BlockingQueue],
+    ) -> None:
+        """Reset relaunch racing the startup refresh still yields one extraction."""
+        manager = heating_cycle_manager_with_cache
+
+        await asyncio.gather(
+            manager.refresh_heating_cycle_cache(), manager.refresh_heating_cycle_cache()
+        )
+
+        assert len(blocking_queue.instances) == 1
+        await manager.cancel_extraction()
+
+    @pytest.mark.asyncio
+    async def test_relaunched_after_cancel(
+        self,
+        heating_cycle_manager_with_cache: HeatingCycleLifecycleManager,
+        blocking_queue: type[_BlockingQueue],
+    ) -> None:
+        """A reset cancels the running extraction; its days must be extracted again."""
+        manager = heating_cycle_manager_with_cache
+        await manager.refresh_heating_cycle_cache()
+
+        await manager.cancel_extraction()
+        await manager.refresh_heating_cycle_cache()
+
+        assert len(blocking_queue.instances) == 2
+        await manager.cancel_extraction()
+
+    @pytest.mark.asyncio
+    async def test_relaunched_after_extraction_finished(
+        self,
+        heating_cycle_manager_with_cache: HeatingCycleLifecycleManager,
+        blocking_queue: type[_BlockingQueue],
+    ) -> None:
+        """Days still unexplored after a finished extraction are retried."""
+        manager = heating_cycle_manager_with_cache
+        await manager.refresh_heating_cycle_cache()
+        blocking_queue.finish.set()
+        assert manager._extraction_task is not None
+        await manager._extraction_task
+
+        await manager.refresh_heating_cycle_cache()
+
+        assert len(blocking_queue.instances) == 2
+
+    @pytest.mark.asyncio
+    async def test_new_ranges_still_relaunch(
+        self,
+        heating_cycle_manager_with_cache: HeatingCycleLifecycleManager,
+        blocking_queue: type[_BlockingQueue],
+    ) -> None:
+        """Ranges outside the running extraction replace it, as before."""
+        manager = heating_cycle_manager_with_cache
+        await manager._launch_extraction_for_ranges([(date(2025, 2, 3), date(2025, 2, 9))])
+
+        launched = await manager._launch_extraction_for_ranges(
+            [(date(2025, 1, 27), date(2025, 2, 9))]
+        )
+
+        assert launched is True
+        assert len(blocking_queue.instances) == 2
+        blocking_queue.instances[0].cancel_queue.assert_awaited_once()
+        await manager.cancel_extraction()

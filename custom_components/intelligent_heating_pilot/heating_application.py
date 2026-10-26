@@ -572,20 +572,39 @@ class HeatingApplication:
         sensor-facing caches held here must be dropped too, otherwise sensors
         keep showing the old learned values until restart. They are refreshed
         even when part of the reset failed, so sensors show what is really
-        stored; the error is then raised to the caller.
+        stored; the error is then raised to the caller. Cycle extraction is then
+        relaunched so the learned data is rebuilt from history.
         """
         _LOGGER.debug("Entering HeatingApplication.async_reset_learning()")
         if self._orchestrator is None:
             return
 
-        async with self._learning_lock:
-            try:
-                await self._orchestrator.reset_all_learning_data(device_id=self._device_id)
-            finally:
-                await self._refresh_after_reset()
+        try:
+            async with self._learning_lock:
+                try:
+                    await self._orchestrator.reset_all_learning_data(device_id=self._device_id)
+                finally:
+                    await self._refresh_after_reset()
+        finally:
+            # Outside the lock: the extraction runs in the background and its
+            # completion path must not wait on the reset.
+            await self._relaunch_extraction_after_reset()
 
         _LOGGER.info("[%s] Learning data reset, recalculation requested", self._device_id)
         _LOGGER.debug("Exiting HeatingApplication.async_reset_learning()")
+
+    async def _relaunch_extraction_after_reset(self) -> None:
+        """Relearn from history right away instead of waiting for the next 24h refresh.
+
+        The reset cancelled any running extraction and forgot the explored days, so
+        without this the LHS and dead time stayed at their defaults for up to a day.
+        Also run after a partial reset: only days no longer marked as explored are
+        extracted, which can only bring the learned data back in line with history.
+        If the deferred startup extraction is still to come, it finds the same days
+        already being extracted and does not launch them again.
+        """
+        _LOGGER.info("[%s] Relaunching cycle extraction after learning reset", self._device_id)
+        await self.async_initialize_cycle_extraction()
 
     async def _refresh_after_reset(self) -> None:
         """Reload sensor-facing caches from the managers and force a sensor refresh."""
