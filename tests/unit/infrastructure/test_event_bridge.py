@@ -188,6 +188,16 @@ class TestHasMeaningfulSchedulerChange:
         )
         assert bridge._has_meaningful_scheduler_change(event) is False
 
+    def test_native_schedule_next_event_appears_is_meaningful(self):
+        """A native schedule gaining a next_event (None -> value) must recalculate."""
+        bridge = _make_bridge()
+        event = _make_event(
+            "schedule.heating",
+            _make_state("off", {}),
+            _make_state("off", {"next_event": "2025-01-02T07:00:00+00:00"}),
+        )
+        assert bridge._has_meaningful_scheduler_change(event) is True
+
     def test_actions_changed_is_meaningful(self):
         bridge = _make_bridge()
         old_actions = [{"entity_id": "climate.vtherm", "service_data": {"temperature": 19}}]

@@ -675,6 +675,25 @@ def test_get_native_schedule_temperature_vtherm_missing_uses_default(mock_hass: 
     assert result == 20.0
 
 
+def test_get_native_schedule_temperature_flat_comfort_zero_uses_default(
+    mock_hass: Mock,
+) -> None:
+    """A flat ``comfort_temp`` of 0 is an uninitialized preset, like in preset_temperatures."""
+    mock_hass.states.get.return_value = _make_vtherm_state(
+        {
+            "temperature": 17.0,
+            "preset_mode": "eco",
+            "preset_temperatures": {"comfort_temp": 0},
+            "comfort_temp": 0,
+        }
+    )
+    reader = HASchedulerReader(mock_hass, ["schedule.test"], vtherm_entity_id="climate.vtherm")
+
+    result = reader._get_native_schedule_temperature()
+
+    assert result == 20.0
+
+
 def test_get_native_schedule_temperature_comfort_active_uses_current_target(
     mock_hass: Mock,
 ) -> None:

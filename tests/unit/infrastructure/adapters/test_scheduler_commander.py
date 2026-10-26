@@ -149,3 +149,27 @@ async def test_time_formatting(
         call_args = mock_hass.services.async_call.call_args
         service_data = call_args[0][2]
         assert service_data["time"] == expected_str
+
+
+@pytest.mark.asyncio
+async def test_run_action_native_schedule_calls_no_service(
+    commander: HASchedulerCommander, mock_hass: Mock
+) -> None:
+    """A native schedule.* entity is compute-only: no HACS service is called.
+
+    ``scheduler.run_action`` only exists with HACS Scheduler and only accepts its
+    switch entities; calling it on a native schedule raises ServiceNotFound.
+    """
+    await commander.run_action(datetime(2024, 1, 15, 7, 0), "schedule.heating")
+
+    mock_hass.services.async_call.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_cancel_action_native_schedule_calls_no_service(
+    commander: HASchedulerCommander, mock_hass: Mock
+) -> None:
+    """Cancelling on a native schedule.* entity is a no-op, nothing was triggered."""
+    await commander.cancel_action("schedule.heating")
+
+    mock_hass.services.async_call.assert_not_called()
