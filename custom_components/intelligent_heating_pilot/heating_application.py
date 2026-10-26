@@ -158,7 +158,6 @@ class HeatingApplication:
         # Import recorder queue for HAClimateDataReader
         from .infrastructure.recorder_queue import get_recorder_queue
 
-        # Create climate data reader first so it can be injected into scheduler_reader
         self._climate_data_reader = HAClimateDataReader(
             self.hass, get_recorder_queue(self.hass), self._vtherm_id
         )
@@ -167,7 +166,6 @@ class HeatingApplication:
             self.hass,
             self._scheduler_ids,
             vtherm_entity_id=self._vtherm_id,
-            climate_reader=self._climate_data_reader,
         )
 
         self._scheduler_commander = HASchedulerCommander(self.hass)

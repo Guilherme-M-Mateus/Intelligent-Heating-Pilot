@@ -62,8 +62,7 @@ class IClimateDataReader(ABC):
         """Retrieve the current target temperature from the VTherm entity.
 
         Reads the real-time target temperature set on the VTherm climate entity.
-        This is used, for example, to resolve a target temperature for native HA
-        schedule entities that do not store a temperature themselves.
+        It describes the setpoint applied now, not the one of an upcoming slot.
 
         Returns:
             Current target temperature in °C, or ``None`` when:
