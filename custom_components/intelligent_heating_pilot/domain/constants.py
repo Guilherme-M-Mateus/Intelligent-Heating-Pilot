@@ -29,3 +29,8 @@ BASE_HIGH_CONFIDENCE = 0.9  # Base confidence with good slope
 BASE_MEDIUM_CONFIDENCE = 0.75  # Base confidence with medium slope
 BASE_LOW_CONFIDENCE = 0.6  # Base confidence with low slope
 CONFIDENCE_BOOST_PER_SENSOR = 0.05  # Confidence increase per environmental sensor
+
+# Scheduler action verification
+# Absorbs floating-point representation noise only (VTherm's own step is 0.1-0.5°C);
+# not a user-facing tuning knob.
+TARGET_TEMP_MATCH_TOLERANCE_C = 0.05

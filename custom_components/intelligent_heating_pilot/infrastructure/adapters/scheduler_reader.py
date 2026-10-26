@@ -63,15 +63,23 @@ class HASchedulerReader(ISchedulerReader):
         self._scheduler_entity_ids = scheduler_entity_ids
         self._vtherm_entity_id = vtherm_entity_id
 
-    async def get_next_timeslot(self) -> ScheduledTimeslot | None:
+    async def get_next_timeslot(
+        self, exclude_entity_ids: frozenset[str] = frozenset()
+    ) -> ScheduledTimeslot | None:
         """Retrieve the next scheduled heating timeslot.
 
-        Scans all configured scheduler entities and returns the earliest
-        upcoming timeslot with a valid time and temperature.
+        Scans all configured scheduler entities except those listed in
+        ``exclude_entity_ids`` and returns the earliest upcoming timeslot
+        with a valid time and temperature among the remaining ones.
 
         Supports both HACS Scheduler (switch.*) and native HA Schedule (schedule.*)
         entities. Native schedules use the next_event attribute and require special
         state-aware handling since "off" means "not in active timeslot", not disabled.
+
+        Args:
+            exclude_entity_ids: Scheduler entity ids to skip for this call —
+                typically schedulers already confirmed blocked earlier in the
+                same recalculation cycle.
 
         Returns:
             The next schedule timeslot, or None if no valid timeslots found
@@ -86,6 +94,10 @@ class HASchedulerReader(ISchedulerReader):
         chosen_entity: str | None = None
 
         for entity_id in self._scheduler_entity_ids:
+            if entity_id in exclude_entity_ids:
+                _LOGGER.debug("Scheduler %s excluded for this call, skipping", entity_id)
+                continue
+
             state = self._hass.states.get(entity_id)
             if not state:
                 # Use debug level if HA is still starting up, warning otherwise

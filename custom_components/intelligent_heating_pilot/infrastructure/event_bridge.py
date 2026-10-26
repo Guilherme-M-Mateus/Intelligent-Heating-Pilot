@@ -465,6 +465,8 @@ class HAEventBridge:
                 "scheduler_entity": anticipation_data.get("scheduler_entity"),
                 "humidity": anticipation_data.get("humidity"),
                 "cloud_coverage": anticipation_data.get("cloud_coverage"),
+                "scheduler_blocked": anticipation_data.get("scheduler_blocked", False),
+                "blocked_schedulers": anticipation_data.get("blocked_schedulers", []),
             }
         else:
             event_data = {
@@ -479,6 +481,8 @@ class HAEventBridge:
                 "scheduler_entity": None,
                 "humidity": anticipation_data.get("humidity"),
                 "cloud_coverage": anticipation_data.get("cloud_coverage"),
+                "scheduler_blocked": anticipation_data.get("scheduler_blocked", False),
+                "blocked_schedulers": anticipation_data.get("blocked_schedulers", []),
             }
 
         if self._force_next_publish or self._is_meaningful_change_from_last(event_data):
