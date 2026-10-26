@@ -301,4 +301,4 @@ Rest assured, you can go on vacation without any additional configuration!
 
 **Happy heating!** 🔥
 
-_Intelligent Heating Pilot v0.6.0 - Documentation Last Updated: March 2026_
+_Intelligent Heating Pilot v0.7.0 - Documentation Last Updated: October 2026_

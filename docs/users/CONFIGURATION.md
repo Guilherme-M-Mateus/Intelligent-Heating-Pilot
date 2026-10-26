@@ -391,10 +391,12 @@ After configuration, IHP creates these entities on your device:
 
 | Sensor | What It Shows | Updated |
 |--------|--------------|---------|
-| **Learned Heating Slope** | How fast your room heats (°C/hour) | Every heating cycle |
-| **Dead Time** | System delay in temperature response (seconds) | Every heating cycle |
-| **Anticipation Time** | When heating will start | Every update cycle |
-| **Next Schedule** | Details of next heating event | Every schedule change |
+| **Anticipated Start Time** | When heating will start | Every update cycle |
+| **Next Schedule Time** | Time and target of the next heating event | Every schedule change |
+| **Global Learned Heating Slope** | How fast your room heats (°C/hour), all hours combined | Every heating cycle |
+| **Contextual Learned Heating Slope** | Slope learned for the hour of the next slot; *unknown* until that hour is learned (the global slope is used meanwhile) | Every heating cycle |
+| **Dead Time** | System delay in temperature response (minutes) | Every heating cycle |
+| **Prediction Confidence** | How reliable the current prediction is (%) | Every update cycle |
 
 ### Debug/Status Sensors
 

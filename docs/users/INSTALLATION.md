@@ -59,6 +59,12 @@ After installation:
 2. 📋 **Configure IHP** - Follow the [Configuration Guide](CONFIGURATION.md)
 3. 📖 **Learn how it works** - Read [How IHP Works](HOW_IT_WORKS.md)
 
+## Updating IHP
+
+Update through HACS (or replace the folder for a manual install), then restart Home Assistant. Read the [CHANGELOG](../../CHANGELOG.md) for steps a version may require.
+
+> **Upgrading to 0.7.0:** call the `intelligent_heating_pilot.reset_learning` service once per device (Developer Tools → Actions). Data learned by earlier versions is skewed; learning restarts right away from the Home Assistant recorder history.
+
 ## Troubleshooting Installation
 
 ### IHP doesn't appear in integrations

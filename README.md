@@ -1,7 +1,7 @@
 # Intelligent Heating Pilot (IHP)
 
 [![hacs_badge](https://img.shields.io/badge/HACS-Custom-orange.svg)](https://github.com/hacs/integration)
-![Version](https://img.shields.io/badge/version-0.6.2-blue)
+[![Release](https://img.shields.io/github/v/release/RastaChaum/Intelligent-Heating-Pilot?label=version&color=blue)](https://github.com/RastaChaum/Intelligent-Heating-Pilot/releases/latest)
 ![Status](https://img.shields.io/badge/status-beta-yellow)
 
 > **The Adaptive Brain for Versatile Thermostat**
@@ -57,7 +57,7 @@ Settings → Devices & Services → + Add Integration
 
 ## 🎯 Features
 
-### Current (v0.6.0)
+### Current
 
 - ✅ **Smart Pre-heating** - Automatically calculates optimal start time based on learned heating performance
 - ✅ **Dead Time Learning** - Accounts for system lag in temperature response for more accurate predictions
@@ -67,6 +67,8 @@ Settings → Devices & Services → + Add Integration
 - ✅ **Configurable Detection Parameters** - Fine-tune cycle detection for your heating system
 - ✅ **Time-Contextual Learning** - Different heating speeds by time of day
 - ✅ **Optional Scheduler** - Works with or without HACS Scheduler via dynamic service calls
+- ✅ **Native Schedules** - `schedule.*` helpers get an anticipated start sensor to build your own automation
+- ✅ **Outdoor Source** - Outdoor sensor or `weather.*` entity, recorded with each heating cycle
 - ✅ **Incremental Cache** - Reduces HA database load for long-term learning
 - ✅ **Zero-Retention Mode** - Option to disable history storage for minimal deployments
 - ✅ **VTherm v8+ Compatible** - Works with latest Versatile Thermostat versions

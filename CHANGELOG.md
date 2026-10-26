@@ -7,24 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-> **After upgrading, call the `reset_learning` service once per device.** Data learned by earlier versions is skewed (see below) and would keep distorting preheating until it leaves the retention window. Learning restarts right away from the Home Assistant recorder history: the most recent days first, older ones over the following days.
+> **After upgrading, call the `reset_learning` service once per device.** Data learned by earlier versions is skewed and would keep distorting preheating. Learning restarts right away from the Home Assistant recorder history.
 
 ### Fixed
-- **Learning is reliable again** (#179, #183, #184, #185) – Heating cycles are now dated correctly, the dead time is measured within its own cycle and learned from all cycles, and each scheduled slot uses the heating slope learned for its own hour (a slow hour falls back to the room's learned slope instead of the 2.0 °C/h default). Preheating no longer starts hours too early or too late.
-- **Reset and new learning take effect without a restart** (#181) – `reset_learning` clears everything and relearns from history immediately, and the sensors show the new slopes and dead time as soon as they are learned.
-- **No more comfort/eco flapping before a slot** (#182) – A started preheat is kept until its slot, and reverted only if the slot is removed or moved.
-- **Contextual slope sensor no longer shows the room's global slope** (#226) – For a scheduled hour with no slope learned yet, the "Contextual Learned Heating Slope" sensor now shows *unknown* instead of the global value. A learned value equal to 2.0 °C/h is now displayed too. Preheating still uses the global slope for such hours.
-- **Changing the retention period no longer resets the device configuration** (#186), and services called during startup return a clear error.
-- **Cycles that barely heated no longer drag the room's learned slope down** (#223) – Cycles below 0.2 °C/h (e.g. thermostat in safety mode or load shedding) are now left out of the room's learned slope, with the same rule as the per-hour slope. If no cycle is left, the 2.0 °C/h default is used, so preheating no longer starts hours too early. The per-hour slope now also leaves out each of those cycles individually instead of rejecting the hour's whole average: an hour with cycles at 3.0 and 0.1 °C/h now learns 3.0 instead of 1.55.
-- **Native `schedule.*` entities anticipate the comfort temperature** (#188) – For the next ON slot of a native Home Assistant schedule, IHP now computes the anticipated start and the next target from the VTherm *comfort* preset (20 °C if it is not set) instead of the setpoint held while the schedule is off, and exposes them as sensors. Moving the next ON time of the schedule is taken into account right away. IHP does not start the heating itself for a native schedule (there is no HACS Scheduler to delegate to), and no longer logs a `scheduler.run_action` error for it. For actual preheating, use HACS Scheduler or an automation on the anticipated start sensor.
-- **One scheduler can no longer block preheating for all the others** (#189) – A HACS scheduler whose next slot has no readable temperature (unknown preset, `set_hvac_mode` action) made IHP crash while reading its `next_entries`, and no preheating was scheduled for any configured scheduler. That scheduler is now just skipped, and any other unexpected error while reading one scheduler is logged as a warning without stopping the others.
-- **Sensor attributes and prediction confidence stay up to date** (#191) – The *Anticipated Start Time* and *Next Schedule Time* sensors now refresh their attributes (target temperature, current temperature, confidence, scheduler…) even when the time itself does not change, and a change of confidence alone now updates the *Prediction Confidence* sensor. Its `environmental_data_available` attribute now reports the humidity and cloud coverage sensors correctly instead of always `false`. The *Dead Time* sensor no longer renames the device to "Intelligent Heating Pilot <name>", and the "… cleared" messages are logged once instead of on every recalculation.
+- **More accurate preheating** (#179, #183, #184, #185, #223) – Heating cycles are dated and measured correctly, each scheduled slot uses the slope learned for its own hour, and cycles that barely heated (safety mode, load shedding) are ignored. Preheating no longer starts hours too early or too late.
+- **Learning changes apply without a restart** (#181) – `reset_learning` relearns from history immediately, and sensors show new values as soon as they are learned.
+- **No more comfort/eco flapping before a slot** (#182) – A started preheat is kept until its slot, unless the slot is removed or moved.
+- **Schedulers** (#188, #189) – Native `schedule.*` entities now get an anticipated start based on the VTherm comfort preset (IHP does not start the heating for them: use HACS Scheduler or an automation on the sensor), and one misconfigured HACS scheduler no longer blocks preheating for the others.
+- **Sensors stay up to date** (#191, #226) – Attributes and prediction confidence refresh correctly, the contextual slope sensor shows *unknown* for hours not learned yet, and the device is no longer renamed.
+- **Settings and services** (#186) – Changing the retention period no longer resets the device configuration, and services called during startup return a clear error.
 
-### Changed
-- **Outdoor temperature** (#180, #190) – An outdoor temperature sensor or a `weather.*` entity can now be configured (°F and K are converted) and is recorded with each heating cycle, for a future weather-aware adjustment. The fixed outdoor correction, which counted the cold twice, is removed.
+### Added
+- **Outdoor temperature** (#180, #190) – A sensor or a `weather.*` entity can be configured and is recorded with each heating cycle, for a future weather-aware adjustment. The fixed outdoor correction, which counted the cold twice, is removed.
 
 ### Maintenance
-- CI and release tooling: shell injection fix and workflow linting (#194), release promotion fix, missing pylint dependency.
+- CI and release tooling hardening (#194, #199).
 
 ## [0.6.4] - 2026-10-24
 
