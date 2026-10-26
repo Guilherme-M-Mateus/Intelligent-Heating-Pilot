@@ -43,6 +43,11 @@ _SENSOR_STATE_KEY = "state"
 # Tolerance in seconds for anticipated_start_time comparison.  Changes smaller
 # than this are not considered meaningful enough to re-publish the event.
 _ANTICIPATION_TIME_TOLERANCE_SECONDS = 60
+# Tolerances below which a numeric field change is not worth re-publishing.
+_CURRENT_TEMP_TOLERANCE = 0.1
+_LHS_TOLERANCE = 0.05
+# Confidence is a 0-1 ratio: one percentage point is the smallest visible step.
+_CONFIDENCE_TOLERANCE = 0.01
 
 
 class HAEventBridge:
@@ -351,23 +356,14 @@ class HAEventBridge:
             if new_data.get(key) != last.get(key):
                 return True
 
-        # Current indoor temperature (0.1 °C tolerance)
-        new_temp = new_data.get("current_temp")
-        last_temp = last.get("current_temp")
-        # Transition between "no data" and a real temperature is always meaningful
-        if (new_temp is None) != (last_temp is None):
-            return True
-        if new_temp is not None and last_temp is not None and abs(new_temp - last_temp) >= 0.1:
-            return True
-
-        # Learned heating slope (0.05 °C/h tolerance)
-        new_lhs = new_data.get("learned_heating_slope")
-        last_lhs = last.get("learned_heating_slope")
-        # Transition between "no data" and a real slope is always meaningful
-        if (new_lhs is None) != (last_lhs is None):
-            return True
-        if new_lhs is not None and last_lhs is not None and abs(new_lhs - last_lhs) >= 0.05:
-            return True
+        numeric_tolerances = (
+            ("current_temp", _CURRENT_TEMP_TOLERANCE),
+            ("learned_heating_slope", _LHS_TOLERANCE),
+            ("confidence_level", _CONFIDENCE_TOLERANCE),
+        )
+        for key, tolerance in numeric_tolerances:
+            if self._numeric_changed(new_data.get(key), last.get(key), tolerance):
+                return True
 
         # Anticipated start time (1-minute tolerance)
         new_start = new_data.get("anticipated_start_time")
@@ -394,6 +390,16 @@ class HAEventBridge:
             return True
 
         return False
+
+    @staticmethod
+    def _numeric_changed(new: float | None, last: float | None, tolerance: float) -> bool:
+        """Return True when a numeric field moved by at least *tolerance*.
+
+        A transition between "no data" and a real value is always a change.
+        """
+        if (new is None) != (last is None):
+            return True
+        return new is not None and last is not None and abs(new - last) >= tolerance
 
     def _handle_vtherm_change(self, event: Event[EventStateChangedData]) -> None:
         """Handle VTherm state changes (temperature filter + recalculation trigger).
@@ -457,6 +463,8 @@ class HAEventBridge:
                 "learned_heating_slope": anticipation_data.get("learned_heating_slope"),
                 "confidence_level": anticipation_data.get("confidence_level"),
                 "scheduler_entity": anticipation_data.get("scheduler_entity"),
+                "humidity": anticipation_data.get("humidity"),
+                "cloud_coverage": anticipation_data.get("cloud_coverage"),
             }
         else:
             event_data = {
@@ -469,6 +477,8 @@ class HAEventBridge:
                 "learned_heating_slope": anticipation_data.get("learned_heating_slope"),
                 "confidence_level": None,
                 "scheduler_entity": None,
+                "humidity": anticipation_data.get("humidity"),
+                "cloud_coverage": anticipation_data.get("cloud_coverage"),
             }
 
         if self._force_next_publish or self._is_meaningful_change_from_last(event_data):

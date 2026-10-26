@@ -557,6 +557,8 @@ class HeatingApplication:
                 "learned_heating_slope": anticipation_data.get("learned_heating_slope"),
                 "confidence_level": anticipation_data.get("confidence_level"),
                 "scheduler_entity": anticipation_data.get("scheduler_entity", ""),
+                "humidity": anticipation_data.get("humidity"),
+                "cloud_coverage": anticipation_data.get("cloud_coverage"),
             }
             self.hass.bus.async_fire(
                 f"{DOMAIN}_anticipation_calculated",
