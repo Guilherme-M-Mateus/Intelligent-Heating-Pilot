@@ -12,7 +12,6 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from custom_components.intelligent_heating_pilot.application.use_cases import (
-    CheckOvershootRiskUseCase,
     ControlPreheatingUseCase,
     ScheduleAnticipationActionUseCase,
 )
@@ -187,23 +186,6 @@ def schedule_anticipation_action_use_case(
         scheduler_commander=scheduler_commander,
         timer_scheduler=timer_scheduler,
         control_preheating_use_case=control_preheating,
-    )
-
-
-@pytest.fixture
-def check_overshoot_risk_use_case(
-    scheduler_reader: HASchedulerReader,
-    environment_reader: HAEnvironmentReader,
-    climate_data_reader: HAClimateDataReader,
-    control_preheating_use_case: ControlPreheatingUseCase,
-) -> CheckOvershootRiskUseCase:
-    """Create CheckOvershootRiskUseCase with real adapters."""
-    return CheckOvershootRiskUseCase(
-        scheduler_reader=scheduler_reader,
-        environment_reader=environment_reader,
-        climate_data_reader=climate_data_reader,
-        control_preheating=control_preheating_use_case,
-        overshoot_threshold_celsius=0.5,
     )
 
 

@@ -429,6 +429,7 @@ class HAHeatingCycleStorage(BaseHAStorageAdapter[dict[str, Any]], IHeatingCycleS
             "start_temp": cycle.start_temp,
             "tariff_details": None,
             "dead_time_cycle_minutes": cycle.dead_time_cycle_minutes,
+            "avg_outdoor_temp": cycle.avg_outdoor_temp,
         }
 
         # Serialize tariff details if present
@@ -499,4 +500,6 @@ class HAHeatingCycleStorage(BaseHAStorageAdapter[dict[str, Any]], IHeatingCycleS
             start_temp=cycle_dict["start_temp"],
             tariff_details=tariff_details,
             dead_time_cycle_minutes=cycle_dict.get("dead_time_cycle_minutes"),
+            # Absent from cycles stored before outdoor temperature was recorded
+            avg_outdoor_temp=cycle_dict.get("avg_outdoor_temp"),
         )

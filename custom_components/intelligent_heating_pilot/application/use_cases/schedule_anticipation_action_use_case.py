@@ -116,14 +116,11 @@ class ScheduleAnticipationActionUseCase:
             await self.cancel_action()
             return
 
-        # Decision 3: Target already reached (anticipation_minutes == 0) - clear state
+        await self._cancel_preheating_for_other_slot(anticipation_data["next_schedule_time"])
+
+        # Decision 3: No heating time needed (anticipation_minutes == 0)
         if anticipation_data.get("anticipation_minutes") == 0:
-            _LOGGER.debug("Target reached - clearing anticipation state")
-            await self.cancel_action()
-            await self._control_preheating.cancel_preheating(
-                self._control_preheating.get_active_scheduler_entity()
-                or anticipation_data.get("scheduler_entity")
-            )
+            await self._handle_no_heating_needed(anticipation_data)
             return
 
         # Decision 4: No scheduler entity - skip scheduling
@@ -140,6 +137,48 @@ class ScheduleAnticipationActionUseCase:
             scheduler_entity_id=scheduler_entity,
             lhs=float(anticipation_data.get("learned_heating_slope") or 0.0),
         )
+
+    async def _cancel_preheating_for_other_slot(self, target_time: datetime) -> None:
+        """Revert an active preheat whose slot is no longer the next one.
+
+        The slot was removed or moved, so the scheduler will never apply it and
+        _complete_elapsed_preheating() would leave its setpoint on the thermostat.
+
+        Args:
+            target_time: Target time of the next scheduled slot
+        """
+        if not self._control_preheating.is_preheating_active():
+            return
+        preheating_target = self._control_preheating.get_preheating_target_time()
+        if preheating_target == target_time:
+            return
+        _LOGGER.info(
+            "Next slot changed from %s to %s - reverting active preheating",
+            preheating_target,
+            target_time.isoformat(),
+        )
+        await self._control_preheating.cancel_preheating()
+        await self._clear_state()
+
+    async def _handle_no_heating_needed(self, anticipation_data: dict) -> None:
+        """Handle a recalculation that reports zero minutes of anticipation.
+
+        Zero minutes means either the temperature is unknown or the room is
+        already at target. Neither case must revert an active preheat: the
+        next recalculation would restart it and the setpoint would flap
+        between comfort and eco until the slot fires.
+
+        Args:
+            anticipation_data: Calculated anticipation data
+        """
+        if anticipation_data.get("current_temp") is None:
+            _LOGGER.debug("Indoor temperature unavailable - keeping current preheating state")
+            return
+        if self._control_preheating.is_preheating_active():
+            _LOGGER.debug("Target reached early - keeping active preheating until its slot")
+            return
+        _LOGGER.debug("Target reached - clearing anticipation state")
+        await self.cancel_action()
 
     async def schedule_action(
         self,
@@ -185,7 +224,8 @@ class ScheduleAnticipationActionUseCase:
             return
 
         # Handle revert logic: cancel active preheating only when anticipated start is pushed later
-        # by at least the configured tolerance.
+        # by at least the configured tolerance, and only if the new start is still ahead:
+        # a start already in the past would restart preheating on the same tick.
         if self._control_preheating.is_preheating_active():
             preheating_target = self._control_preheating.get_preheating_target_time()
             postponed_seconds = 0.0
@@ -195,6 +235,7 @@ class ScheduleAnticipationActionUseCase:
                 preheating_target == target_time
                 and self._last_scheduled_time is not None
                 and postponed_seconds >= self._anticipation_recalc_tolerance_seconds
+                and anticipated_start > now
             ):
                 delta_minutes = postponed_seconds / 60.0
                 _LOGGER.info(
@@ -219,7 +260,8 @@ class ScheduleAnticipationActionUseCase:
                     "Anticipated start %s is past, triggering preheating immediately",
                     anticipated_start.isoformat(),
                 )
-                # Delegate to ControlPreheatingUseCase
+                # A timer left by an earlier calculation would otherwise fire during this preheat
+                await self._cancel_timer()
                 await self._control_preheating.start_preheating(
                     target_time, target_temp, scheduler_entity_id
                 )

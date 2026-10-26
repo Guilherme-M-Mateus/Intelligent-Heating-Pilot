@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+> **After upgrading, call the `reset_learning` service once per device.** Data learned by earlier versions is skewed and would keep distorting preheating. Learning restarts right away from the Home Assistant recorder history.
+
+### Fixed
+- **More accurate preheating** (#179, #183, #184, #185, #223) – Heating cycles are dated and measured correctly, each scheduled slot uses the slope learned for its own hour, and cycles that barely heated (safety mode, load shedding) are ignored. Preheating no longer starts hours too early or too late.
+- **Learning changes apply without a restart** (#181) – `reset_learning` relearns from history immediately, and sensors show new values as soon as they are learned.
+- **No more comfort/eco flapping before a slot** (#182) – A started preheat is kept until its slot, unless the slot is removed or moved.
+- **Schedulers** (#188, #189) – Native `schedule.*` entities now get an anticipated start based on the VTherm comfort preset (IHP does not start the heating for them: use HACS Scheduler or an automation on the sensor), and one misconfigured HACS scheduler no longer blocks preheating for the others.
+- **Sensors stay up to date** (#191, #226) – Attributes and prediction confidence refresh correctly, the contextual slope sensor shows *unknown* for hours not learned yet, and the device is no longer renamed.
+- **Settings and services** (#186) – Changing the retention period no longer resets the device configuration, and services called during startup return a clear error.
+
+### Added
+- **Outdoor temperature** (#180, #190) – A sensor or a `weather.*` entity can be configured and is recorded with each heating cycle, for a future weather-aware adjustment. The fixed outdoor correction, which counted the cold twice, is removed.
+
+### Maintenance
+- CI and release tooling hardening (#194, #199).
+
 ## [0.6.4] - 2026-10-24
 
 ### Added

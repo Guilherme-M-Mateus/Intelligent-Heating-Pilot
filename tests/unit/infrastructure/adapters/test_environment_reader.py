@@ -176,3 +176,109 @@ async def test_get_current_environment_reads_optional_sensors(mock_hass: Mock) -
     assert result.outdoor_humidity == 70.0
     assert result.cloud_coverage == 25.0
     assert result.timestamp == fixed_now
+
+
+def _weather_state(condition: str, attributes: dict) -> Mock:
+    state = _make_state(condition, attributes)
+    state.domain = "weather"
+    return state
+
+
+@pytest.mark.asyncio
+async def test_weather_entity_attributes_feed_outdoor_values(mock_hass: Mock) -> None:
+    """Weather entities expose outdoor values through attributes, not the state."""
+    states = {
+        "climate.vtherm": _make_state("heat", {"current_temperature": 19.0}),
+        "weather.home": _weather_state(
+            "cloudy", {"temperature": 7.5, "humidity": 80, "cloud_coverage": 90}
+        ),
+    }
+    mock_hass.states.get.side_effect = states.get
+
+    with patch(
+        "custom_components.intelligent_heating_pilot.infrastructure.adapters.environment_reader.get_entity_name",
+        return_value="Living Room",
+    ):
+        reader = HAEnvironmentReader(
+            mock_hass,
+            "climate.vtherm",
+            outdoor_temp_entity_id="weather.home",
+            humidity_out_entity_id="weather.home",
+            cloud_cover_entity_id="weather.home",
+        )
+        result = await reader.get_current_environment()
+
+    assert result is not None
+    assert result.outdoor_temp == 7.5
+    assert result.outdoor_humidity == 80.0
+    assert result.cloud_coverage == 90.0
+
+
+@pytest.mark.asyncio
+async def test_weather_entity_without_attribute_yields_none(mock_hass: Mock) -> None:
+    """A weather entity lacking the attribute gives None instead of failing."""
+    states = {
+        "climate.vtherm": _make_state("heat", {"current_temperature": 19.0}),
+        "weather.home": _weather_state("cloudy", {"temperature": 7.5}),
+    }
+    mock_hass.states.get.side_effect = states.get
+
+    with patch(
+        "custom_components.intelligent_heating_pilot.infrastructure.adapters.environment_reader.get_entity_name",
+        return_value="Living Room",
+    ):
+        reader = HAEnvironmentReader(
+            mock_hass,
+            "climate.vtherm",
+            outdoor_temp_entity_id="weather.home",
+            cloud_cover_entity_id="weather.home",
+        )
+        result = await reader.get_current_environment()
+
+    assert result is not None
+    assert result.outdoor_temp == 7.5
+    assert result.cloud_coverage is None
+
+
+async def _read_outdoor_temp(mock_hass: Mock, outdoor_state: Mock) -> float | None:
+    states = {
+        "climate.vtherm": _make_state("heat", {"current_temperature": 19.0}),
+        "outdoor.source": outdoor_state,
+    }
+    mock_hass.states.get.side_effect = states.get
+    with patch(
+        "custom_components.intelligent_heating_pilot.infrastructure.adapters.environment_reader.get_entity_name",
+        return_value="Living Room",
+    ):
+        reader = HAEnvironmentReader(
+            mock_hass, "climate.vtherm", outdoor_temp_entity_id="outdoor.source"
+        )
+        result = await reader.get_current_environment()
+    assert result is not None
+    return result.outdoor_temp
+
+
+@pytest.mark.asyncio
+async def test_fahrenheit_weather_temperature_is_converted_to_celsius(mock_hass: Mock) -> None:
+    """The domain works in Celsius whatever unit the weather entity reports."""
+    outdoor = _weather_state("cloudy", {"temperature": 41.0, "temperature_unit": "°F"})
+
+    assert await _read_outdoor_temp(mock_hass, outdoor) == pytest.approx(5.0)
+
+
+@pytest.mark.asyncio
+async def test_fahrenheit_sensor_temperature_is_converted_to_celsius(mock_hass: Mock) -> None:
+    """A sensor's unit_of_measurement drives the conversion."""
+    outdoor = _make_state("41", {"unit_of_measurement": "°F"})
+    outdoor.domain = "sensor"
+
+    assert await _read_outdoor_temp(mock_hass, outdoor) == pytest.approx(5.0)
+
+
+@pytest.mark.asyncio
+async def test_unknown_temperature_unit_yields_none(mock_hass: Mock) -> None:
+    """An unconvertible unit is safer as no data than as a wrong temperature."""
+    outdoor = _make_state("41", {"unit_of_measurement": "bananas"})
+    outdoor.domain = "sensor"
+
+    assert await _read_outdoor_temp(mock_hass, outdoor) is None

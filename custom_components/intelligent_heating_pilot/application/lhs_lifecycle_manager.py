@@ -7,6 +7,8 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING
 
+from ..domain.constants import DEFAULT_LEARNED_SLOPE, MINIMUM_REALISTIC_LHS
+from ..domain.value_objects.contextual_lhs_by_hour import ContextualLHSByHour
 from ..domain.value_objects.heating import HeatingCycle
 
 if TYPE_CHECKING:
@@ -133,6 +135,9 @@ class LhsLifecycleManager:
         # These are loaded from storage on startup and invalidated on updates
         self._cached_global_lhs: float | None = None  # Global LHS value
         self._cached_contextual_lhs: dict[int, float] = {}  # hour (0-23) -> LHS value
+        # Hours known to have no contextual LHS: they use the global LHS without
+        # re-reading storage or rescanning cycles on every lookup
+        self._global_fallback_hours: set[int] = set()
         self._timer_cancel_func: Callable[[], None] | None = None
 
     async def startup(self) -> None:
@@ -155,7 +160,7 @@ class LhsLifecycleManager:
         - **Reads from storage**: model_storage.get_cached_global_lhs()
         - **Reads from storage**: model_storage.get_cached_contextual_lhs() for CURRENT HOUR ONLY
         - **Writes to memory**: Populates _cached_global_lhs and _cached_contextual_lhs[current_hour]
-        - **Does NOT write to storage**: Only loads existing cached values
+        - **Writes to storage**: Only to remove an unrealistic stored contextual value
         - **Does NOT compute**: Uses cached values or returns defaults via get_* methods
 
         Note:
@@ -184,15 +189,12 @@ class LhsLifecycleManager:
                 "Loading contextual LHS for current hour: %d (lazy loading enabled)", current_hour
             )
 
-            cached_contextual = await self._model_storage.get_cached_contextual_lhs(current_hour)
-            if cached_contextual is not None:
-                # Extract value from LHSCacheEntry
-                lhs_value = cached_contextual.value
-                self._cached_contextual_lhs[current_hour] = lhs_value
+            contextual_value = await self._load_stored_contextual_lhs(current_hour)
+            if contextual_value is not None:
                 _LOGGER.debug(
                     "Loaded cached contextual LHS for current hour %d: %.2f °C/h",
                     current_hour,
-                    lhs_value,
+                    contextual_value,
                 )
             else:
                 _LOGGER.debug(
@@ -226,6 +228,17 @@ class LhsLifecycleManager:
 
         _LOGGER.debug("Exiting LhsLifecycleManager.startup")
 
+    def invalidate_memory_cache(self) -> None:
+        """Drop the in-memory global and contextual LHS caches.
+
+        Used after a learning reset: the memory cache is read before storage,
+        so without this the old learned values would survive until restart.
+        """
+        _LOGGER.debug("Invalidating LHS in-memory caches")
+        self._cached_global_lhs = None
+        self._cached_contextual_lhs = {}
+        self._global_fallback_hours = set()
+
     async def on_retention_change(self, cycles: list[HeatingCycle]) -> None:
         """Handle retention configuration changes.
 
@@ -243,7 +256,8 @@ class LhsLifecycleManager:
         - **Computes**: global_lhs_calculator.calculate_global_lhs(cycles)
         - **Computes**: contextual_lhs_calculator.calculate_contextual_lhs(cycles)
         - **Writes to storage**: model_storage.set_cached_global_lhs()
-        - **Writes to storage**: model_storage.set_cached_contextual_lhs(hour, value)
+        - **Writes to storage**: set_cached_contextual_lhs() for learned hours,
+          delete_cached_contextual_lhs() for hours rejected as unrealistic
 
         Args:
             cycles: Heating cycles extracted for the new retention window.
@@ -251,14 +265,11 @@ class LhsLifecycleManager:
         Returns:
             None.
         """
-        from ..domain.constants import DEFAULT_LEARNED_SLOPE, MINIMUM_REALISTIC_LHS
-
         _LOGGER.debug("Entering LhsLifecycleManager.on_retention_change")
         _LOGGER.debug("Recalculating LHS from %d cycles after retention change", len(cycles))
 
         # Step 1: Invalidate in-memory caches FIRST (before any computation)
-        self._cached_global_lhs = None
-        self._cached_contextual_lhs = {}
+        self.invalidate_memory_cache()
         _LOGGER.debug("Invalidated in-memory caches before recalculation")
 
         # Step 2: Recalculate global LHS from provided cycles
@@ -279,13 +290,8 @@ class LhsLifecycleManager:
         _LOGGER.info("Recalculated global LHS: %.2f °C/h", global_lhs)
 
         # Step 3: Recalculate contextual LHS from provided cycles
-        contextual_lhs_by_hour = self._contextual_lhs_calculator.calculate_all_contextual_lhs(
-            cycles
-        )
-        for hour, lhs_value in contextual_lhs_by_hour.items():
-            if lhs_value is not None and lhs_value > 0:
-                await self._model_storage.set_cached_contextual_lhs(hour, lhs_value, updated_at)
-        _LOGGER.debug("Recalculated contextual LHS for %d hours", len(contextual_lhs_by_hour))
+        contextual_lhs = self._contextual_lhs_calculator.calculate_contextual_lhs_by_hour(cycles)
+        await self._store_contextual_lhs_by_hour(contextual_lhs, updated_at)
 
         _LOGGER.debug("Exiting LhsLifecycleManager.on_retention_change")
 
@@ -297,16 +303,17 @@ class LhsLifecycleManager:
         2. HeatingCycleLifecycleManager calls this method with the fresh cycles
         3. Recalculate global LHS from provided cycles
         4. Recalculate contextual LHS (by hour) from provided cycles
-        5. Persist new LHS values to storage
-        6. Invalidate in-memory caches (will reload from storage on next access)
+        5. Persist new LHS values to storage, removing hours rejected as unrealistic
+        6. Refresh in-memory caches with the new values
 
         Cache Strategy:
         - **Receives cycles from**: HeatingCycleLifecycleManager.on_24h_timer()
         - **Computes**: global_lhs_calculator.calculate_global_lhs(cycles)
         - **Computes**: contextual_lhs_calculator.calculate_contextual_lhs(cycles)
         - **Writes to storage**: model_storage.set_cached_global_lhs()
-        - **Writes to storage**: model_storage.set_cached_contextual_lhs(hour, value)
-        - **Invalidates memory**: Sets _cached_global_lhs = None, _cached_contextual_lhs = {}
+        - **Writes to storage**: set_cached_contextual_lhs() for learned hours,
+          delete_cached_contextual_lhs() for hours rejected as unrealistic
+        - **Memory**: Drops _cached_global_lhs, replaces _cached_contextual_lhs with the new values
 
         Args:
             cycles: Heating cycles extracted for the current retention window.
@@ -314,8 +321,6 @@ class LhsLifecycleManager:
         Returns:
             None.
         """
-        from ..domain.constants import DEFAULT_LEARNED_SLOPE, MINIMUM_REALISTIC_LHS
-
         _LOGGER.debug("Entering LhsLifecycleManager.on_24h_timer")
         _LOGGER.info("24h LHS refresh timer triggered")
 
@@ -339,14 +344,8 @@ class LhsLifecycleManager:
         _LOGGER.info("Refreshed global LHS: %.2f °C/h", global_lhs)
 
         # Recalculate contextual LHS from provided cycles
-        contextual_lhs_by_hour = self._contextual_lhs_calculator.calculate_all_contextual_lhs(
-            cycles
-        )
-        for hour, lhs_value in contextual_lhs_by_hour.items():
-            if lhs_value is not None and lhs_value > 0:
-                await self._model_storage.set_cached_contextual_lhs(hour, lhs_value, updated_at)
-        # Invalidate cache to ensure fresh load
-        self._cached_contextual_lhs = {}
+        contextual_lhs = self._contextual_lhs_calculator.calculate_contextual_lhs_by_hour(cycles)
+        await self._store_contextual_lhs_by_hour(contextual_lhs, updated_at)
 
         _LOGGER.debug("Exiting LhsLifecycleManager.on_24h_timer")
 
@@ -368,8 +367,6 @@ class LhsLifecycleManager:
         Returns:
             The cached or default global LHS in C/hour.
         """
-        from ..domain.constants import DEFAULT_LEARNED_SLOPE
-
         _LOGGER.debug("Entering LhsLifecycleManager.get_global_lhs")
 
         # Check in-memory cache first (fast path)
@@ -440,10 +437,11 @@ class LhsLifecycleManager:
         - **Reads from memory first**: Checks _cached_contextual_lhs[target_hour]
         - **On memory cache hit**: Returns immediately (fast path)
         - **On memory cache miss**: Loads from model_storage.get_cached_contextual_lhs(hour)
-        - **If no storage cache**: Computes from provided cycles
+        - **If no storage cache**: Computes from provided cycles, unless the hour is a
+          known fallback hour (rejected as unrealistic)
         - **Writes to memory**: Caches loaded/computed value in _cached_contextual_lhs[hour]
         - **Falls back to global LHS**: If no contextual data exists for the hour
-        - **Does NOT write to storage**: Read-only operation (use update_contextual_lhs_from_cycles)
+        - **Writes to storage**: Only to remove an unrealistic stored value
 
         Use Case:
         Called during anticipation calculations to get hour-specific heating rates.
@@ -461,59 +459,60 @@ class LhsLifecycleManager:
         target_hour = target_time.hour
         _LOGGER.debug("Getting contextual LHS for hour %d", target_hour)
 
-        # Check in-memory cache first (fast path)
-        if target_hour in self._cached_contextual_lhs:
-            cached_value = self._cached_contextual_lhs[target_hour]
+        learned_lhs = await self.get_learned_contextual_lhs(target_hour)
+        if learned_lhs is not None:
+            _LOGGER.debug("Exiting LhsLifecycleManager.get_contextual_lhs")
+            return learned_lhs
+
+        if target_hour not in self._global_fallback_hours:
+            # Nothing stored, compute contextual LHS for THIS HOUR ONLY (not all 24)
+            _LOGGER.debug(
+                "No cached contextual LHS for hour %d, computing from cycles", target_hour
+            )
+            computed_lhs = self._contextual_lhs_calculator.calculate_contextual_lhs_for_hour(
+                cycles, target_hour
+            )
+            if computed_lhs is not None:
+                self._cached_contextual_lhs[target_hour] = computed_lhs
+                _LOGGER.debug(
+                    "Computed and cached contextual LHS for hour %d: %.2f °C/h",
+                    target_hour,
+                    computed_lhs,
+                )
+                _LOGGER.debug("Exiting LhsLifecycleManager.get_contextual_lhs")
+                return computed_lhs
+
+        _LOGGER.debug("No contextual LHS for hour %d, falling back to global LHS", target_hour)
+        _LOGGER.debug("Exiting LhsLifecycleManager.get_contextual_lhs")
+        return await self.get_global_lhs()
+
+    async def get_learned_contextual_lhs(self, hour: int) -> float | None:
+        """Return the contextual LHS learned for an hour, without any fallback.
+
+        Unlike get_contextual_lhs(), this never substitutes the global LHS, so
+        callers can tell a learned contextual slope from a fallback.
+
+        Cache Strategy (read-only except for removing unrealistic stored values):
+        - **Known fallback hour**: Returns None without reading storage
+        - **Reads from memory first**: Checks _cached_contextual_lhs[hour]
+        - **On memory cache miss**: Loads from storage into memory
+
+        Args:
+            hour: Hour (0-23) to look up.
+
+        Returns:
+            The learned contextual LHS in C/hour, or None if the hour has none.
+        """
+        if hour in self._global_fallback_hours:
+            return None
+        if hour in self._cached_contextual_lhs:
             _LOGGER.debug(
                 "Returning in-memory cached contextual LHS for hour %d: %.2f °C/h",
-                target_hour,
-                cached_value,
+                hour,
+                self._cached_contextual_lhs[hour],
             )
-            _LOGGER.debug("Exiting LhsLifecycleManager.get_contextual_lhs")
-            return cached_value
-
-        # Not in memory cache, try to get from storage
-        cached_entry = await self._model_storage.get_cached_contextual_lhs(target_hour)
-
-        if cached_entry is not None:
-            cached_contextual = cached_entry.value
-            # Cache in memory for subsequent calls
-            self._cached_contextual_lhs[target_hour] = cached_contextual
-            _LOGGER.debug(
-                "Loaded from storage and cached contextual LHS for hour %d: %.2f °C/h",
-                target_hour,
-                cached_contextual,
-            )
-            _LOGGER.debug("Exiting LhsLifecycleManager.get_contextual_lhs")
-            return cached_contextual
-
-        # No cache, compute contextual LHS for THIS HOUR ONLY (not all 24)
-        _LOGGER.debug("No cached contextual LHS for hour %d, computing from cycles", target_hour)
-        computed_lhs = self._contextual_lhs_calculator.calculate_contextual_lhs_for_hour(
-            cycles, target_hour
-        )
-
-        # If contextual LHS is None or invalid (< 0.5°C/h), fallback to global LHS
-        from ..domain.constants import MINIMUM_REALISTIC_LHS
-
-        if computed_lhs is None or computed_lhs < MINIMUM_REALISTIC_LHS:
-            _LOGGER.debug(
-                "Contextual LHS for hour %d is invalid (%.2f°C/h < %.2f°C/h), falling back to global LHS",
-                target_hour,
-                computed_lhs or 0,
-                MINIMUM_REALISTIC_LHS,
-            )
-            return await self.get_global_lhs()
-
-        # Cache computed value in memory
-        self._cached_contextual_lhs[target_hour] = computed_lhs
-        _LOGGER.debug(
-            "Computed and cached contextual LHS for hour %d: %.2f °C/h",
-            target_hour,
-            computed_lhs,
-        )
-        _LOGGER.debug("Exiting LhsLifecycleManager.get_contextual_lhs")
-        return computed_lhs
+            return self._cached_contextual_lhs[hour]
+        return await self._load_stored_contextual_lhs(hour)
 
     async def update_global_lhs_from_cycles(self, cycles: list[HeatingCycle]) -> float:
         """Recalculate and persist global LHS from cycles.
@@ -537,8 +536,6 @@ class LhsLifecycleManager:
         Returns:
             The computed and persisted global LHS in C/hour.
         """
-        from ..domain.constants import DEFAULT_LEARNED_SLOPE, MINIMUM_REALISTIC_LHS
-
         _LOGGER.debug("Entering LhsLifecycleManager.update_global_lhs_from_cycles")
         _LOGGER.debug("Updating global LHS from %d cycles", len(cycles))
 
@@ -585,9 +582,10 @@ class LhsLifecycleManager:
         Cache Strategy (write operation):
         - **Receives cycles from**: HeatingCycleLifecycleManager
         - **Computes**: contextual_lhs_calculator.calculate_contextual_lhs(cycles)
-        - **Writes to storage**: model_storage.set_cached_contextual_lhs(hour, lhs, timestamp) for each hour
-        - **Invalidates memory**: Sets _cached_contextual_lhs = {}
-        - **Next read**: get_contextual_lhs() will reload from storage into memory per hour
+        - **Writes to storage**: set_cached_contextual_lhs() for each learned hour,
+          delete_cached_contextual_lhs() for each hour rejected as unrealistic
+        - **Memory**: Replaces _cached_contextual_lhs with the learned hours
+        - **Hours without cycles**: Keep their stored value, reloaded on demand
 
         Args:
             cycles: Heating cycles used to compute contextual LHS by hour.
@@ -598,32 +596,81 @@ class LhsLifecycleManager:
         _LOGGER.debug("Entering LhsLifecycleManager.update_contextual_lhs_from_cycles")
         _LOGGER.debug("Updating contextual LHS from %d cycles", len(cycles))
 
-        contextual_lhs_by_hour = self._contextual_lhs_calculator.calculate_all_contextual_lhs(
-            cycles
-        )
-
-        # Persist non-None values with timestamp
+        contextual_lhs = self._contextual_lhs_calculator.calculate_contextual_lhs_by_hour(cycles)
         updated_at = dt_util.now() if dt_util is not None else datetime.now()
+        await self._store_contextual_lhs_by_hour(contextual_lhs, updated_at)
 
-        persisted_count = 0
-        for hour, lhs_value in contextual_lhs_by_hour.items():
-            if lhs_value is not None:
-                await self._model_storage.set_cached_contextual_lhs(hour, lhs_value, updated_at)
-                persisted_count += 1
+        _LOGGER.debug("Exiting LhsLifecycleManager.update_contextual_lhs_from_cycles")
+        return contextual_lhs.as_hour_map()
 
-        # Update in-memory cache with new values for fast subsequent access
-        # Only cache non-None values
-        self._cached_contextual_lhs = {
-            hour: lhs for hour, lhs in contextual_lhs_by_hour.items() if lhs is not None
-        }
-        _LOGGER.debug(
-            "Updated contextual LHS in-memory cache for %d hours", len(self._cached_contextual_lhs)
+    async def _store_contextual_lhs_by_hour(
+        self, contextual_lhs: ContextualLHSByHour, updated_at: datetime
+    ) -> None:
+        """Persist learned hours and forget rejected ones, in storage and memory.
+
+        Writes only ever added or updated hours, so a slope stored before an
+        hour turned unrealistic stayed in use instead of the global LHS (#184).
+        Hours without cycles keep what they learned before.
+
+        Args:
+            contextual_lhs: Result of the contextual LHS calculation.
+            updated_at: Timestamp stored with each learned value.
+        """
+        for hour, lhs_value in contextual_lhs.learned.items():
+            await self._model_storage.set_cached_contextual_lhs(hour, lhs_value, updated_at)
+        for hour in contextual_lhs.rejected_hours:
+            await self._model_storage.delete_cached_contextual_lhs(hour)
+
+        self._cached_contextual_lhs = dict(contextual_lhs.learned)
+        self._global_fallback_hours = set(contextual_lhs.rejected_hours)
+
+        _LOGGER.info(
+            "Updated contextual LHS for %d hours, removed %d unrealistic hours",
+            len(contextual_lhs.learned),
+            len(contextual_lhs.rejected_hours),
         )
 
-        _LOGGER.info("Updated contextual LHS for %d hours", persisted_count)
-        _LOGGER.debug("Exiting LhsLifecycleManager.update_contextual_lhs_from_cycles")
+    async def _forget_contextual_lhs(self, hour: int) -> None:
+        """Drop an hour's contextual LHS from memory and storage so it uses the global LHS.
 
-        return contextual_lhs_by_hour
+        Args:
+            hour: Hour (0-23) to forget.
+        """
+        self._cached_contextual_lhs.pop(hour, None)
+        self._global_fallback_hours.add(hour)
+        await self._model_storage.delete_cached_contextual_lhs(hour)
+
+    async def _load_stored_contextual_lhs(self, hour: int) -> float | None:
+        """Load a stored contextual LHS into the memory cache if it is realistic.
+
+        Earlier versions stored values below MINIMUM_REALISTIC_LHS (#184). Such a
+        value is removed from storage the first time it is read, so the hour
+        falls back to the global LHS from then on.
+
+        Args:
+            hour: Hour (0-23) to load.
+
+        Returns:
+            The stored LHS in C/hour, or None if absent or unrealistic.
+        """
+        cached_entry = await self._model_storage.get_cached_contextual_lhs(hour)
+        if cached_entry is None:
+            return None
+        if cached_entry.value < MINIMUM_REALISTIC_LHS:
+            _LOGGER.info(
+                "Removing stored contextual LHS for hour %d (%.2f°C/h < %.2f°C/h), "
+                "using global LHS instead",
+                hour,
+                cached_entry.value,
+                MINIMUM_REALISTIC_LHS,
+            )
+            await self._forget_contextual_lhs(hour)
+            return None
+        self._cached_contextual_lhs[hour] = cached_entry.value
+        _LOGGER.debug(
+            "Loaded contextual LHS from storage for hour %d: %.2f °C/h", hour, cached_entry.value
+        )
+        return cached_entry.value
 
     async def ensure_contextual_lhs_populated(
         self,
@@ -638,7 +685,8 @@ class LhsLifecycleManager:
         but it's not in the cache (memory or storage).
 
         Cache Strategy (write operation with lazy loading):
-        - **If force_recalculate=True**: Skip cache checks, recompute immediately
+        - **If force_recalculate=True**: Skip cache checks, recompute immediately; if no
+          contextual LHS results, the hour is removed from memory and storage
         - **Reads from memory first**: Checks _cached_contextual_lhs[target_hour]
         - **On memory cache hit**: Returns immediately (fast path)
         - **Reads from storage**: Tries model_storage.get_cached_contextual_lhs(hour)
@@ -669,75 +717,27 @@ class LhsLifecycleManager:
             force_recalculate,
         )
 
-        # If force_recalculate, skip cache checks and recompute THIS HOUR ONLY
-        if force_recalculate:
-            _LOGGER.debug("Force recalculate enabled, bypassing cache for hour %d", target_hour)
-            computed_lhs = self._contextual_lhs_calculator.calculate_contextual_lhs_for_hour(
-                cycles, target_hour
-            )
-
-            # Persist if value exists
-            if computed_lhs is not None:
-                updated_at = dt_util.now() if dt_util is not None else datetime.now()
-                await self._model_storage.set_cached_contextual_lhs(
-                    target_hour, computed_lhs, updated_at
-                )
-                # Update memory cache
-                self._cached_contextual_lhs[target_hour] = computed_lhs
-                _LOGGER.debug(
-                    "Forced recalculation: contextual LHS for hour %d: %.2f °C/h",
-                    target_hour,
-                    computed_lhs,
-                )
+        if not force_recalculate:
+            learned_lhs = await self.get_learned_contextual_lhs(target_hour)
+            if learned_lhs is not None:
                 _LOGGER.debug("Exiting LhsLifecycleManager.ensure_contextual_lhs_populated")
-                return computed_lhs
+                return learned_lhs
+            if target_hour in self._global_fallback_hours:
+                _LOGGER.debug("Exiting LhsLifecycleManager.ensure_contextual_lhs_populated")
+                return await self.get_global_lhs()
 
-            # No contextual data, fallback to global LHS
-            _LOGGER.debug("No contextual LHS for hour %d, falling back to global", target_hour)
-            global_lhs = await self.get_global_lhs()
-            _LOGGER.debug("Exiting LhsLifecycleManager.ensure_contextual_lhs_populated")
-            return global_lhs
-
-        # Check memory cache first (fast path)
-        if target_hour in self._cached_contextual_lhs:
-            cached_value = self._cached_contextual_lhs[target_hour]
-            _LOGGER.debug(
-                "Contextual LHS already in memory cache for hour %d: %.2f °C/h",
-                target_hour,
-                cached_value,
-            )
-            _LOGGER.debug("Exiting LhsLifecycleManager.ensure_contextual_lhs_populated")
-            return cached_value
-
-        # Check storage cache
-        cached_entry = await self._model_storage.get_cached_contextual_lhs(target_hour)
-
-        if cached_entry is not None:
-            cached_contextual = cached_entry.value
-            # Load into memory cache for subsequent calls
-            self._cached_contextual_lhs[target_hour] = cached_contextual
-            _LOGGER.debug(
-                "Loaded contextual LHS from storage for hour %d: %.2f °C/h",
-                target_hour,
-                cached_contextual,
-            )
-            _LOGGER.debug("Exiting LhsLifecycleManager.ensure_contextual_lhs_populated")
-            return cached_contextual
-
-        # No cache, compute contextual LHS for THIS HOUR ONLY (not all 24)
-        _LOGGER.debug("No cached contextual LHS for hour %d, computing from cycles", target_hour)
+        # Compute contextual LHS for THIS HOUR ONLY (not all 24)
         computed_lhs = self._contextual_lhs_calculator.calculate_contextual_lhs_for_hour(
             cycles, target_hour
         )
 
-        # If contextual LHS exists, persist and cache
         if computed_lhs is not None:
             updated_at = dt_util.now() if dt_util is not None else datetime.now()
             await self._model_storage.set_cached_contextual_lhs(
                 target_hour, computed_lhs, updated_at
             )
-            # Cache in memory for subsequent calls
             self._cached_contextual_lhs[target_hour] = computed_lhs
+            self._global_fallback_hours.discard(target_hour)
             _LOGGER.debug(
                 "Computed and cached contextual LHS for hour %d: %.2f °C/h",
                 target_hour,
@@ -746,8 +746,11 @@ class LhsLifecycleManager:
             _LOGGER.debug("Exiting LhsLifecycleManager.ensure_contextual_lhs_populated")
             return computed_lhs
 
-        # No contextual data, fallback to global LHS
+        if force_recalculate:
+            # A forced recalculation is authoritative: a value learned earlier
+            # must not come back on the next lookup
+            await self._forget_contextual_lhs(target_hour)
+
         _LOGGER.debug("No contextual LHS for hour %d, falling back to global LHS", target_hour)
-        global_lhs = await self.get_global_lhs()
         _LOGGER.debug("Exiting LhsLifecycleManager.ensure_contextual_lhs_populated")
-        return global_lhs
+        return await self.get_global_lhs()

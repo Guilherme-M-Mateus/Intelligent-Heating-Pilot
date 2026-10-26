@@ -162,16 +162,13 @@ class CalculateAnticipationUseCase:
                 )
 
         # Get remaining environment data
-        outdoor_temp = environment.outdoor_temp if environment else None
         humidity = environment.indoor_humidity if environment else None
         cloud_coverage = environment.cloud_coverage if environment else None
 
-        # Get device ID
-        vtherm_id = self._climate_data_reader.get_vtherm_entity_id()
-
-        # Get heating cycles for LHS calculation
+        # Cycles are stored under the device (config entry) id; the VTherm entity id
+        # finds none, which silently disabled dead time learning from cycles.
         heating_cycles = await self._heating_cycle_manager.get_cycles_for_target_time(
-            device_id=vtherm_id,
+            device_id=self._heating_cycle_manager.device_id,
             target_time=target_time,
         )
 
@@ -196,7 +193,7 @@ class CalculateAnticipationUseCase:
             avg_dead_time = self._dead_time_calculator.calculate_average_dead_time(heating_cycles)
             if avg_dead_time is not None and avg_dead_time > 0:
                 dead_time = avg_dead_time
-                _LOGGER.info(
+                _LOGGER.debug(
                     "Learned dead_time from %d cycles: %.1f minutes",
                     len(heating_cycles),
                     dead_time,
@@ -215,7 +212,6 @@ class CalculateAnticipationUseCase:
         prediction = self._prediction_service.predict_heating_time(
             current_temp=current_temp,  # Pass None if unavailable
             target_temp=target_temp,
-            outdoor_temp=outdoor_temp,
             humidity=humidity,
             learned_slope=lhs,
             target_time=target_time,
@@ -243,6 +239,8 @@ class CalculateAnticipationUseCase:
             timeslot_id=timeslot_id,
             scheduler_entity=scheduler_entity,
             dead_time=dead_time,
+            humidity=humidity,
+            cloud_coverage=cloud_coverage,
         )
 
         _LOGGER.debug("Exiting calculate_anticipation_datas() -> %s", "data")
@@ -260,6 +258,8 @@ class CalculateAnticipationUseCase:
         timeslot_id: str | None = None,
         scheduler_entity: str | None = None,
         dead_time: float | None = None,
+        humidity: float | None = None,
+        cloud_coverage: float | None = None,
     ) -> dict:
         """Create data structure with provided values or None defaults.
 
@@ -276,6 +276,8 @@ class CalculateAnticipationUseCase:
             "timeslot_id": timeslot_id,
             "scheduler_entity": scheduler_entity,
             "dead_time": dead_time,
+            "humidity": humidity,
+            "cloud_coverage": cloud_coverage,
         }
 
     async def _get_persisted_dead_time_or_default(self) -> float:
@@ -294,9 +296,7 @@ class CalculateAnticipationUseCase:
             try:
                 stored = await self._lhs_storage.get_learned_dead_time()
                 if stored is not None and stored > 0:
-                    _LOGGER.debug(
-                        "Using persisted learned dead_time: %.1f minutes", stored
-                    )
+                    _LOGGER.debug("Using persisted learned dead_time: %.1f minutes", stored)
                     return stored
                 if stored is not None and stored <= 0:
                     _LOGGER.debug(

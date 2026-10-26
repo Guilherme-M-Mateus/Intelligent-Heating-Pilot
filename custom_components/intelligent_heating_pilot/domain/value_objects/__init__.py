@@ -5,6 +5,7 @@ Value objects are immutable data carriers that represent concepts in the domain.
 
 from __future__ import annotations
 
+from .contextual_lhs_by_hour import ContextualLHSByHour
 from .environment_state import EnvironmentState
 from .heating import HeatingAction, HeatingCycle, HeatingDecision, TariffPeriodDetail
 from .heating_cycle_cache_data import HeatingCycleCacheData
@@ -15,6 +16,7 @@ from .scheduled_timeslot import ScheduledTimeslot
 from .slope_data import SlopeData
 
 __all__ = [
+    "ContextualLHSByHour",
     "EnvironmentState",
     "ScheduledTimeslot",
     "PredictionResult",

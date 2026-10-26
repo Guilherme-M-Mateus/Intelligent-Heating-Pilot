@@ -774,3 +774,75 @@ class TestExtractHeatingCyclesGracePeriod:
         # The single cycle must span from the original start to the final end
         assert cycles[0].start_time == t0
         assert cycles[0].end_time == t3
+
+
+# =============================================================================
+# TestExtractDeadTime
+# =============================================================================
+
+
+class TestExtractDeadTime:
+    """Dead time of extracted cycles is searched within the parent cycle only (issue #185)."""
+
+    @pytest.mark.asyncio
+    async def test_rise_after_cycle_end_gives_no_dead_time(self, service, base_time):
+        """Given a cycle closed by mode OFF before any rise, a later rise is not its dead time."""
+        t0 = base_time
+        t_end = t0 + timedelta(minutes=20)  # Mode OFF closes the cycle
+        t_later = t0 + timedelta(minutes=120)  # Rise from a later heating episode
+
+        dataset = HistoricalDataSet(
+            data={
+                HistoricalDataKey.INDOOR_TEMP: [
+                    m(t0, 18.0),
+                    m(t0 + timedelta(minutes=10), 18.1),
+                    m(t_later, 18.6),
+                ],
+                HistoricalDataKey.TARGET_TEMP: [m(t0, 20.0)],
+                HistoricalDataKey.HEATING_STATE: [
+                    m(t0, True, hvac_action="heating", hvac_mode="heat"),  # START
+                    m(t_end, False, hvac_action="off", hvac_mode="off"),  # END
+                ],
+            }
+        )
+
+        cycles = await service.extract_heating_cycles(
+            "my_device_id", dataset, t0, t_later + timedelta(minutes=5)
+        )
+
+        assert len(cycles) == 1
+        assert cycles[0].end_time == t_end
+        assert cycles[0].dead_time_cycle_minutes is None
+
+    @pytest.mark.asyncio
+    async def test_split_cycle_keeps_parent_dead_time_on_first_sub_cycle(
+        self, service_with_splitting, base_time
+    ):
+        """Given a rise after the first sub-cycle ends, the first sub-cycle still carries it.
+
+        The rise at +40 min is outside the first 30-min sub-cycle but inside the 90-min
+        parent cycle, so it is the parent's dead time.
+        """
+        t0 = base_time
+        t_rise = t0 + timedelta(minutes=40)
+        t_end = t0 + timedelta(minutes=90)  # Target threshold reached
+
+        dataset = HistoricalDataSet(
+            data={
+                HistoricalDataKey.INDOOR_TEMP: [m(t0, 18.0), m(t_rise, 18.3), m(t_end, 19.6)],
+                HistoricalDataKey.TARGET_TEMP: [m(t0, 20.0)],
+                HistoricalDataKey.HEATING_STATE: [
+                    m(t0, True, hvac_action="heating", hvac_mode="heat"),  # START
+                    m(t_rise, True, hvac_action="heating", hvac_mode="heat"),
+                    m(t_end, False, hvac_action="off", hvac_mode="heat"),  # END
+                ],
+            }
+        )
+
+        cycles = await service_with_splitting.extract_heating_cycles(
+            "my_device_id", dataset, t0, t_end + timedelta(minutes=5)
+        )
+
+        assert len(cycles) == 3
+        assert cycles[0].dead_time_cycle_minutes == pytest.approx(40.0)
+        assert all(c.dead_time_cycle_minutes is None for c in cycles[1:])

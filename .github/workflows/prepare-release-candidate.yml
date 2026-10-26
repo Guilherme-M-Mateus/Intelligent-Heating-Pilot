@@ -29,20 +29,23 @@ jobs:
 
       - name: Validate version format
         id: validate
+        env:
+          VERSION: ${{ inputs.version }}
         run: |
-          if [[ ! "${{ inputs.version }}" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
             echo "❌ Version invalide. Format attendu: X.Y.Z"
             exit 1
           fi
-          echo "version=${{ inputs.version }}" >> $GITHUB_OUTPUT
-          echo "rc_tag=v${{ inputs.version }}-rc1" >> $GITHUB_OUTPUT
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
+          echo "rc_tag=v${VERSION}-rc1" >> $GITHUB_OUTPUT
 
       - name: Check RC tag and release state
         id: rc_state
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ inputs.version }}
         run: |
-          RC_TAG="v${{ inputs.version }}-rc1"
+          RC_TAG="v${VERSION}-rc1"
 
           if git rev-parse "$RC_TAG" >/dev/null 2>&1; then
             echo "tag_exists=true" >> $GITHUB_OUTPUT
@@ -65,8 +68,9 @@ jobs:
       - name: Clean up dev pre-release if exists
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ inputs.version }}
         run: |
-          DEV_TAG="v${{ inputs.version }}-dev"
+          DEV_TAG="v${VERSION}-dev"
           # Query GitHub Releases API — source of truth
           DEV_RELEASE=$(gh release view "$DEV_TAG" --json tagName --jq '.tagName' 2>/dev/null || echo "")
           if [ -n "$DEV_RELEASE" ]; then
@@ -109,31 +113,40 @@ jobs:
 
       - name: Create RC tag
         if: steps.rc_state.outputs.tag_exists != 'true'
+        env:
+          VERSION: ${{ inputs.version }}
+          RC_TAG: ${{ steps.validate.outputs.rc_tag }}
         run: |
-          git tag -a "${{ steps.validate.outputs.rc_tag }}" -m "Release Candidate v${{ inputs.version }}-rc1" -m "Release candidate pour tests en production." -m "Changements prévus :" -m "$(cat /tmp/rc-notes.md)"
+          git tag -a "$RC_TAG" -m "Release Candidate v${VERSION}-rc1" -m "Release candidate pour tests en production." -m "Changements prévus :" -m "$(cat /tmp/rc-notes.md)"
 
-          git push origin "${{ steps.validate.outputs.rc_tag }}"
+          git push origin "$RC_TAG"
 
       - name: Reuse existing RC tag
         if: steps.rc_state.outputs.tag_exists == 'true'
+        env:
+          RC_TAG: ${{ steps.validate.outputs.rc_tag }}
         run: |
-          echo "✅ Réutilisation du tag existant ${{ steps.validate.outputs.rc_tag }}"
+          echo "✅ Réutilisation du tag existant $RC_TAG"
 
       - name: Create GitHub Pre-Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ inputs.version }}
+          RC_TAG: ${{ steps.validate.outputs.rc_tag }}
         run: |
-          gh release create "${{ steps.validate.outputs.rc_tag }}" \
-            --title "🧪 v${{ inputs.version }}-rc1 - Release Candidate" \
+          gh release create "$RC_TAG" \
+            --title "🧪 v${VERSION}-rc1 - Release Candidate" \
             --notes-file /tmp/rc-notes.md \
             --prerelease \
             --target integration
 
       - name: Summary
+        env:
+          RC_TAG: ${{ steps.validate.outputs.rc_tag }}
         run: |
           echo "## ✅ Release Candidate créée avec succès" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Tag:** \`${{ steps.validate.outputs.rc_tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** \`$RC_TAG\`" >> $GITHUB_STEP_SUMMARY
           echo "**Branche:** \`integration\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📋 Prochaines étapes" >> $GITHUB_STEP_SUMMARY

@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, Mock
 import pytest
 
 from custom_components.intelligent_heating_pilot.application.use_cases import (
+    LearningResetError,
     UpdateCacheDataUseCase,
 )
 from custom_components.intelligent_heating_pilot.domain.value_objects import HeatingCycle
@@ -38,6 +39,7 @@ class TestUpdateCacheDataUseCase:
         """Create mock ILhsStorage."""
         storage = Mock()
         storage.clear_slope_history = AsyncMock()
+        storage.set_learned_dead_time = AsyncMock()
         return storage
 
     @pytest.fixture
@@ -45,6 +47,15 @@ class TestUpdateCacheDataUseCase:
         """Create mock LhsLifecycleManager."""
         manager = Mock()
         manager.update_global_lhs_from_cache = AsyncMock()
+        manager.invalidate_memory_cache = Mock()
+        return manager
+
+    @pytest.fixture
+    def mock_heating_cycle_manager(self) -> Mock:
+        """Create mock HeatingCycleLifecycleManager."""
+        manager = Mock()
+        manager.invalidate_memory_cache = Mock()
+        manager.cancel_extraction = AsyncMock()
         return manager
 
     @pytest.fixture
@@ -53,10 +64,14 @@ class TestUpdateCacheDataUseCase:
         mock_cycle_storage: Mock,
         mock_lhs_storage: Mock,
         mock_lhs_lifecycle_manager: Mock,
+        mock_heating_cycle_manager: Mock,
     ) -> UpdateCacheDataUseCase:
         """Create UpdateCacheDataUseCase instance."""
         return UpdateCacheDataUseCase(
-            mock_cycle_storage, mock_lhs_storage, mock_lhs_lifecycle_manager
+            mock_cycle_storage,
+            mock_lhs_storage,
+            mock_lhs_lifecycle_manager,
+            mock_heating_cycle_manager,
         )
 
     @pytest.fixture
@@ -176,3 +191,73 @@ class TestUpdateCacheDataUseCase:
             device_id, sample_cycles, reference_time
         )
         mock_cycle_storage.prune_old_cycles.assert_called_once_with(device_id, reference_time)
+
+    @pytest.mark.asyncio
+    async def test_reset_cache_clears_storage(
+        self,
+        use_case: UpdateCacheDataUseCase,
+        mock_cycle_storage: Mock,
+        mock_lhs_storage: Mock,
+    ) -> None:
+        """Test that reset_cache() clears cycles, LHS and learned dead time in storage."""
+        # WHEN: reset_cache is called
+        await use_case.reset_cache(device_id="climate.test")
+
+        # THEN: Every persisted learning artifact is cleared
+        mock_cycle_storage.clear_cache.assert_awaited_once_with("climate.test")
+        mock_lhs_storage.clear_slope_history.assert_awaited_once()
+        mock_lhs_storage.set_learned_dead_time.assert_awaited_once_with(None)
+
+    @pytest.mark.asyncio
+    async def test_reset_cache_invalidates_memory_caches(
+        self,
+        use_case: UpdateCacheDataUseCase,
+        mock_lhs_lifecycle_manager: Mock,
+        mock_heating_cycle_manager: Mock,
+    ) -> None:
+        """Test that reset_cache() also drops the lifecycle managers' memory caches.
+
+        Regression for #181: memory caches are read before storage, so clearing
+        storage alone left the old learned values in use until restart.
+        """
+        # WHEN: reset_cache is called
+        await use_case.reset_cache(device_id="climate.test")
+
+        # THEN: Both in-memory caches are invalidated
+        mock_lhs_lifecycle_manager.invalidate_memory_cache.assert_called_once()
+        mock_heating_cycle_manager.invalidate_memory_cache.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_reset_cache_stops_extraction_before_clearing_storage(
+        self,
+        use_case: UpdateCacheDataUseCase,
+        mock_cycle_storage: Mock,
+        mock_heating_cycle_manager: Mock,
+    ) -> None:
+        """A running extraction would write learned data back after the clear."""
+        calls: list[str] = []
+        mock_heating_cycle_manager.cancel_extraction.side_effect = lambda: calls.append("cancel")
+        mock_cycle_storage.clear_cache.side_effect = lambda _device_id: calls.append("clear")
+
+        await use_case.reset_cache(device_id="climate.test")
+
+        assert calls == ["cancel", "clear"]
+
+    @pytest.mark.asyncio
+    async def test_reset_cache_runs_every_step_when_one_fails(
+        self,
+        use_case: UpdateCacheDataUseCase,
+        mock_cycle_storage: Mock,
+        mock_lhs_storage: Mock,
+        mock_heating_cycle_manager: Mock,
+    ) -> None:
+        """A storage error on cycles must not leave the LHS and dead time in place."""
+        mock_cycle_storage.clear_cache.side_effect = OSError("disk full")
+
+        with pytest.raises(LearningResetError) as exc_info:
+            await use_case.reset_cache(device_id="climate.test")
+
+        assert exc_info.value.failed_steps == ["heating cycles"]
+        mock_heating_cycle_manager.invalidate_memory_cache.assert_called_once()
+        mock_lhs_storage.clear_slope_history.assert_awaited_once()
+        mock_lhs_storage.set_learned_dead_time.assert_awaited_once_with(None)

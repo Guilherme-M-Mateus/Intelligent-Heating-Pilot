@@ -70,7 +70,7 @@ class ControlPreheatingUseCase:
             _LOGGER.debug("No active preheating to cancel")
 
         # Mark preheating as inactive (but keep target_time for state tracking)
-        # Target time may still be in future (e.g., cancelled due to overshoot)
+        # Target time may still be in future (e.g., reverted after a postponed start)
         self._is_preheating_active = False
         # Note: _preheating_target_time and _active_scheduler_entity are NOT cleared
         # They remain for state tracking and potential restart

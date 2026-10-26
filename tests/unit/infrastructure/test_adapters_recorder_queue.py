@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock
+from datetime import datetime
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -61,3 +62,29 @@ class TestAdaptersWithRecorderQueue:
         assert sensor._recorder_queue is climate._recorder_queue
         assert climate._recorder_queue is weather._recorder_queue
         assert sensor._recorder_queue.lock is recorder_queue.lock
+
+
+class TestWeatherHistoryQuery:
+    """Weather history must include attribute-only updates."""
+
+    @pytest.mark.asyncio
+    async def test_fetch_history_disables_significant_changes_only(self):
+        """weather is not a significant domain, so the default would freeze history."""
+        instance = MagicMock()
+
+        async def _run(func):
+            return func()
+
+        instance.async_add_executor_job = _run
+        reader = HAWeatherDataReader(MagicMock(), RecorderAccessQueue())
+
+        with (
+            patch("homeassistant.components.recorder.get_instance", return_value=instance),
+            patch(
+                "homeassistant.components.recorder.history.get_significant_states",
+                return_value={},
+            ) as get_states,
+        ):
+            await reader._fetch_history("weather.home", datetime(2026, 1, 1), datetime(2026, 1, 2))
+
+        assert get_states.call_args.kwargs["significant_changes_only"] is False

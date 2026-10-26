@@ -15,9 +15,9 @@ jobs:
       - name: Delete merged branch
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ github.event.pull_request.head.ref }}
+          REPOSITORY: ${{ github.repository }}
         run: |
-          BRANCH="${{ github.event.pull_request.head.ref }}"
-
           # Ne pas supprimer integration ou main
           if [[ "$BRANCH" == "integration" ]] || [[ "$BRANCH" == "main" ]]; then
             echo "⏭️  Branche protégée, pas de suppression"
@@ -28,6 +28,6 @@ jobs:
           gh api \
             --method DELETE \
             -H "Accept: application/vnd.github+json" \
-            "/repos/${{ github.repository }}/git/refs/heads/$BRANCH" \
+            "/repos/${REPOSITORY}/git/refs/heads/${BRANCH}" \
           && echo "✅ Branche $BRANCH supprimée" \
           || echo "⚠️  Impossible de supprimer la branche $BRANCH"

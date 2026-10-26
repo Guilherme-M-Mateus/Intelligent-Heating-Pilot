@@ -57,18 +57,18 @@ class TestContextualLHSEndToEnd:
         calculator_service: ContextualLHSCalculatorService,
         mock_model_storage: AsyncMock,
     ) -> None:
-        """Scenario A: Next schedule at 06:00, cycles exist at hour 6.
+        """Scenario A: Next schedule at 07:00, cycles reached their target at hour 7.
 
         Setup:
-          - Next Schedule Time: 2025-02-09 06:00 (hour=6)
-          - Extracted cycles: Cycle(start_time=06:15, lhs=15.0), Cycle(start_time=06:30, lhs=14.5)
+          - Next Schedule Time: 2025-02-09 07:00 (hour=7)
+          - Extracted cycles: Cycle(06:15→07:15, lhs=15.0), Cycle(06:30→07:30, lhs=14.5)
 
         Expected:
           - contextual_lhs = 14.75°C/h (average)
-          - Cache populated for hour 6
+          - Cache populated for hour 7
           - Sensor returns float value
         """
-        # Create cycles at hour 6
+        # Create cycles ending at hour 7
         cycle1 = self._create_cycle(
             start_time=base_datetime.replace(hour=6, minute=15),
             end_time=base_datetime.replace(hour=7, minute=15),
@@ -83,8 +83,8 @@ class TestContextualLHSEndToEnd:
         )
         cycles = [cycle1, cycle2]
 
-        # Calculate contextual LHS for hour 6
-        result = calculator_service.calculate_contextual_lhs_for_hour(cycles, 6)
+        # Calculate contextual LHS for hour 7
+        result = calculator_service.calculate_contextual_lhs_for_hour(cycles, 7)
 
         # Verify
         assert result is not None
@@ -103,7 +103,7 @@ class TestContextualLHSEndToEnd:
 
         Setup:
           - Next Schedule Time: 2025-02-09 12:00 (hour=12)
-          - Extracted cycles: Cycle(start_time=06:15, lhs=15.0) [no hour 12]
+          - Extracted cycles: Cycle(06:15→07:15, lhs=15.0) [no hour 12]
 
         Expected:
           - contextual_lhs = None
@@ -182,12 +182,12 @@ class TestContextualLHSEndToEnd:
     # ===== Multi-Day Cycle Tests =====
 
     @pytest.mark.asyncio
-    async def test_multi_day_cycle_uses_start_hour(
+    async def test_multi_day_cycle_uses_end_hour(
         self,
         base_datetime: datetime,
         calculator_service: ContextualLHSCalculatorService,
     ) -> None:
-        """Multi-day cycle from 23:00 to next day 02:00 belongs to hour 23.
+        """Multi-day cycle from 23:00 to next day 02:00 belongs to hour 2.
 
         Setup:
           - Cycle starts 2025-02-08 23:00
@@ -195,8 +195,8 @@ class TestContextualLHSEndToEnd:
           - Spans midnight
 
         Expected:
-          - Hour extraction = 23 (start hour, not span logic)
-          - Cycle groups to hour 23, not hours 23, 0, 1, 2
+          - Hour extraction = 2 (end hour, not span logic)
+          - Cycle groups to hour 2, not hours 23, 0, 1, 2
         """
         start = base_datetime.replace(day=8, hour=23, minute=0)
         end = base_datetime.replace(day=9, hour=2, minute=0)
@@ -207,14 +207,14 @@ class TestContextualLHSEndToEnd:
 
         hour = calculator_service.extract_hour_from_cycle(cycle)
 
-        assert hour == 23
+        assert hour == 2
 
-        # Verify it groups to hour 23
-        result = calculator_service.calculate_contextual_lhs_for_hour([cycle], 23)
+        # Verify it groups to hour 2
+        result = calculator_service.calculate_contextual_lhs_for_hour([cycle], 2)
         assert result is not None
 
         # Verify it doesn't match other hours
-        for h in [0, 1, 2]:
+        for h in [23, 0, 1]:
             result = calculator_service.calculate_contextual_lhs_for_hour([cycle], h)
             assert result is None
 
@@ -229,12 +229,12 @@ class TestContextualLHSEndToEnd:
         """Cache refresh: new cycles update existing averages.
 
         First extraction:
-          - Cycles at hour 6: [15.0]
-          - Cache[6] = 15.0
+          - Cycles ending at hour 7: [15.0]
+          - Cache[7] = 15.0
 
         Second extraction:
-          - New cycles at hour 6: [15.0, 14.5, 15.5]
-          - Cache[6] updated to average
+          - New cycles ending at hour 7: [15.0, 14.5, 15.5]
+          - Cache[7] updated to average
 
         Expected:
           - Average includes all cycles (new + previous)
@@ -248,8 +248,8 @@ class TestContextualLHSEndToEnd:
         )
 
         result_first = calculator_service.calculate_all_contextual_lhs([cycle1_first])
-        assert result_first[6] is not None
-        assert abs(result_first[6] - 15.0) < 0.01
+        assert result_first[7] is not None
+        assert abs(result_first[7] - 15.0) < 0.01
 
         # Second extraction (simulating 24h refresh)
         cycle1_second = self._create_cycle(
@@ -269,8 +269,8 @@ class TestContextualLHSEndToEnd:
         result_second = calculator_service.calculate_all_contextual_lhs(all_cycles)
 
         # Average should be (15.0 + 14.5 + 15.5) / 3 = 15.0
-        assert result_second[6] is not None
-        assert abs(result_second[6] - 15.0) < 0.01
+        assert result_second[7] is not None
+        assert abs(result_second[7] - 15.0) < 0.01
 
     # ===== Helper Methods =====
 

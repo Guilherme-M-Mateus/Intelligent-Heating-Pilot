@@ -145,53 +145,6 @@ def test_is_heating_active_false_when_at_or_above_target(
     assert reader.is_heating_active() is False
 
 
-def test_get_current_target_temperature_returns_float(
-    mock_hass: Mock, recorder_queue: RecorderAccessQueue
-) -> None:
-    """Return the current target temperature from the VTherm entity."""
-    vtherm_state = _make_state(attributes={"temperature": 21.5})
-    mock_hass.states.get.return_value = vtherm_state
-
-    reader = HAClimateDataReader(mock_hass, recorder_queue, "climate.vtherm")
-
-    assert reader.get_current_target_temperature() == 21.5
-
-
-def test_get_current_target_temperature_returns_none_when_entity_missing(
-    mock_hass: Mock, recorder_queue: RecorderAccessQueue
-) -> None:
-    """Return None when the VTherm entity is not found."""
-    mock_hass.states.get.return_value = None
-
-    reader = HAClimateDataReader(mock_hass, recorder_queue, "climate.vtherm")
-
-    assert reader.get_current_target_temperature() is None
-
-
-def test_get_current_target_temperature_returns_none_when_no_temperature_attr(
-    mock_hass: Mock, recorder_queue: RecorderAccessQueue
-) -> None:
-    """Return None when the temperature attribute is missing."""
-    vtherm_state = _make_state(attributes={"hvac_mode": "heat"})
-    mock_hass.states.get.return_value = vtherm_state
-
-    reader = HAClimateDataReader(mock_hass, recorder_queue, "climate.vtherm")
-
-    assert reader.get_current_target_temperature() is None
-
-
-def test_get_current_target_temperature_skips_zero_value(
-    mock_hass: Mock, recorder_queue: RecorderAccessQueue
-) -> None:
-    """Return None (fall through to default) when temperature is 0 (uninitialized)."""
-    vtherm_state = _make_state(attributes={"temperature": 0})
-    mock_hass.states.get.return_value = vtherm_state
-
-    reader = HAClimateDataReader(mock_hass, recorder_queue, "climate.vtherm")
-
-    assert reader.get_current_target_temperature() is None
-
-
 # ===========================================================================
 # Historical data tests (IHistoricalDataAdapter) — fetch_historical_data
 # ===========================================================================
@@ -320,9 +273,7 @@ class TestFetchHistoricalData:
         assert result.data == {}
 
     @pytest.mark.asyncio
-    async def test_raises_value_error_on_fetch_failure(
-        self, reader: HAClimateDataReader
-    ) -> None:
+    async def test_raises_value_error_on_fetch_failure(self, reader: HAClimateDataReader) -> None:
         """Raise ValueError when history retrieval fails."""
         start_time = get_test_datetime()
         end_time = get_future_datetime(hours=1)
@@ -338,16 +289,12 @@ class TestFetchHistoricalData:
             )
 
     @pytest.mark.asyncio
-    async def test_raises_value_error_on_mapper_failure(
-        self, reader: HAClimateDataReader
-    ) -> None:
+    async def test_raises_value_error_on_mapper_failure(self, reader: HAClimateDataReader) -> None:
         """Raise ValueError when mapper selection fails."""
         start_time = get_test_datetime()
         end_time = get_future_datetime(hours=1)
 
-        reader._mapper_registry.get_mapper_for_entity.side_effect = ValueError(
-            "Entity not found"
-        )
+        reader._mapper_registry.get_mapper_for_entity.side_effect = ValueError("Entity not found")
 
         with pytest.raises(ValueError, match="Entity not found"):
             await reader.fetch_historical_data(
@@ -358,9 +305,7 @@ class TestFetchHistoricalData:
             )
 
     @pytest.mark.asyncio
-    async def test_skips_non_numeric_temperature_values(
-        self, reader: HAClimateDataReader
-    ) -> None:
+    async def test_skips_non_numeric_temperature_values(self, reader: HAClimateDataReader) -> None:
         """Skip records with non-numeric temperature values."""
         start_time = get_test_datetime()
         end_time = get_future_datetime(hours=1)

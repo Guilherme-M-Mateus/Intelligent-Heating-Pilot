@@ -58,9 +58,7 @@ class TestControlPreheatingUseCase:
         await use_case.cancel_preheating(scheduler_entity_id)
 
         # THEN: Commander cancel_action is called
-        mock_scheduler_commander.cancel_action.assert_called_once_with(
-            scheduler_entity_id
-        )
+        mock_scheduler_commander.cancel_action.assert_called_once_with(scheduler_entity_id)
 
     @pytest.mark.asyncio
     async def test_start_preheating_delegates_to_commander(

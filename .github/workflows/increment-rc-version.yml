@@ -33,9 +33,9 @@ jobs:
 
       - name: Find next RC number
         id: rc-number
+        env:
+          VERSION: ${{ inputs.version }}
         run: |
-          VERSION="${{ inputs.version }}"
-
           # Trouver le dernier RC pour cette version
           LAST_RC=$(git tag -l "v${VERSION}-rc*" | sort -V | tail -1)
 
@@ -59,11 +59,10 @@ jobs:
       - name: Build updated release notes
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RC_NUM: ${{ steps.rc-number.outputs.next_rc_num }}
+          LAST_RC: ${{ steps.rc-number.outputs.last_rc }}
+          FIX_DESCRIPTION: ${{ inputs.fix_description }}
         run: |
-          VERSION="${{ inputs.version }}"
-          RC_NUM="${{ steps.rc-number.outputs.next_rc_num }}"
-          LAST_RC="${{ steps.rc-number.outputs.last_rc }}"
-
           # Prefer previous GitHub release notes, but tolerate a missing release when only the tag exists.
           PREV_NOTES=$(gh release view "$LAST_RC" --json body --jq '.body' 2>/dev/null || true)
 
@@ -94,29 +93,38 @@ jobs:
             echo ""
             echo "## 🔧 RC ${RC_NUM} - $(date +%Y-%m-%d)"
             echo ""
-            echo "${{ inputs.fix_description }}"
+            echo "$FIX_DESCRIPTION"
           } > /tmp/new-rc-notes.md
           echo "✅ Notes de version mises à jour"
 
       - name: Create new RC tag
+        env:
+          VERSION: ${{ inputs.version }}
+          RC_NUM: ${{ steps.rc-number.outputs.next_rc_num }}
+          NEXT_RC_TAG: ${{ steps.rc-number.outputs.next_rc_tag }}
+          FIX_DESCRIPTION: ${{ inputs.fix_description }}
         run: |
-          git tag -a "${{ steps.rc-number.outputs.next_rc_tag }}" -m "Release Candidate v${{ inputs.version }}-rc${{ steps.rc-number.outputs.next_rc_num }}" -m "Corrections apportées:" -m "${{ inputs.fix_description }}"
+          git tag -a "$NEXT_RC_TAG" -m "Release Candidate v${VERSION}-rc${RC_NUM}" -m "Corrections apportées:" -m "$FIX_DESCRIPTION"
 
-          git push origin "${{ steps.rc-number.outputs.next_rc_tag }}"
+          git push origin "$NEXT_RC_TAG"
 
       - name: Delete previous RC release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          LAST_RC: ${{ steps.rc-number.outputs.last_rc }}
         run: |
           # Supprimer l'ancienne pre-release (mais garder le tag pour l'historique)
-          gh release delete "${{ steps.rc-number.outputs.last_rc }}" --yes 2>/dev/null || true
+          gh release delete "$LAST_RC" --yes 2>/dev/null || true
 
       - name: Create new GitHub Pre-Release
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ inputs.version }}
+          RC_NUM: ${{ steps.rc-number.outputs.next_rc_num }}
+          NEXT_RC_TAG: ${{ steps.rc-number.outputs.next_rc_tag }}
         run: |
-          gh release create "${{ steps.rc-number.outputs.next_rc_tag }}" \
-            --title "🧪 v${{ inputs.version }}-rc${{ steps.rc-number.outputs.next_rc_num }} - Release Candidate" \
+          gh release create "$NEXT_RC_TAG" \
+            --title "🧪 v${VERSION}-rc${RC_NUM} - Release Candidate" \
             --notes-file /tmp/new-rc-notes.md \
             --prerelease \
             --target integration
@@ -124,10 +132,12 @@ jobs:
       - name: Find and update tracking issue
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ inputs.version }}
+          RC_NUM: ${{ steps.rc-number.outputs.next_rc_num }}
+          NEXT_RC_TAG: ${{ steps.rc-number.outputs.next_rc_tag }}
+          FIX_DESCRIPTION: ${{ inputs.fix_description }}
+          RELEASE_URL_BASE: ${{ github.server_url }}/${{ github.repository }}/releases/tag
         run: |
-          VERSION="${{ inputs.version }}"
-          RC_NUM="${{ steps.rc-number.outputs.next_rc_num }}"
-
           # Chercher l'issue de tracking
           ISSUE_NUMBER=$(gh issue list \
             --label "release-candidate" \
@@ -138,28 +148,32 @@ jobs:
           if [ -n "$ISSUE_NUMBER" ]; then
             gh issue comment "$ISSUE_NUMBER" --body "## 🔄 Nouveau RC disponible: rc${RC_NUM}
 
-            **Tag:** \`${{ steps.rc-number.outputs.next_rc_tag }}\`
+            **Tag:** \`$NEXT_RC_TAG\`
 
             ### Corrections apportées
-            ${{ inputs.fix_description }}
+            $FIX_DESCRIPTION
 
             ### 🔗 Lien
-            [Pre-Release GitHub](${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ steps.rc-number.outputs.next_rc_tag }})
+            [Pre-Release GitHub]($RELEASE_URL_BASE/$NEXT_RC_TAG)
 
             Merci de tester cette nouvelle version et de signaler tout problème dans cette issue."
           fi
 
       - name: Summary
+        env:
+          NEXT_RC_TAG: ${{ steps.rc-number.outputs.next_rc_tag }}
+          LAST_RC: ${{ steps.rc-number.outputs.last_rc }}
+          FIX_DESCRIPTION: ${{ inputs.fix_description }}
         run: |
           echo "## ✅ Nouvelle Release Candidate créée" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Tag:** \`${{ steps.rc-number.outputs.next_rc_tag }}\`" >> $GITHUB_STEP_SUMMARY
-          echo "**Précédent:** \`${{ steps.rc-number.outputs.last_rc }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** \`$NEXT_RC_TAG\`" >> $GITHUB_STEP_SUMMARY
+          echo "**Précédent:** \`$LAST_RC\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 🔧 Corrections" >> $GITHUB_STEP_SUMMARY
-          echo "${{ inputs.fix_description }}" >> $GITHUB_STEP_SUMMARY
+          echo "$FIX_DESCRIPTION" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### 📋 Prochaines étapes" >> $GITHUB_STEP_SUMMARY
           echo "1. Testez la nouvelle RC" >> $GITHUB_STEP_SUMMARY
           echo "2. Si autres corrections nécessaires → relancer ce workflow" >> $GITHUB_STEP_SUMMARY
-          echo "3. Si tout OK → créer PR `integration` → `main` pour release finale" >> $GITHUB_STEP_SUMMARY
+          echo "3. Si tout OK → créer PR \`integration\` → \`main\` pour release finale" >> $GITHUB_STEP_SUMMARY

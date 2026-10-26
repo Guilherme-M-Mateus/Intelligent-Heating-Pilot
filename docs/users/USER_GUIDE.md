@@ -229,7 +229,7 @@ The service returns when to start heating, estimated duration, learned slope, an
 
 ### Q: What happens if I don't have outdoor temperature sensor?
 
-**A:** That's fine! IHP works without it: the outdoor temperature adjustment is simply skipped, and the learned heating slope, computed from your recent heating cycles, already reflects recent weather. Note that an outdoor temperature sensor cannot be configured yet.
+**A:** That's fine! The prediction does not use the outdoor temperature directly: the learned heating slope, computed from your recent heating cycles, already reflects recent weather. When a source is configured, IHP records the outdoor temperature of each heating cycle to prepare a future weather adjustment. If you have no outdoor sensor, you can select a `weather.*` entity instead.
 
 ### Q: Is IHP making my heating worse?
 
@@ -301,4 +301,4 @@ Rest assured, you can go on vacation without any additional configuration!
 
 **Happy heating!** 🔥
 
-_Intelligent Heating Pilot v0.6.0 - Documentation Last Updated: March 2026_
+_Intelligent Heating Pilot v0.7.0 - Documentation Last Updated: October 2026_

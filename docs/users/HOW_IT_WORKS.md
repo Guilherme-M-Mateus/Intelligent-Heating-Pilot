@@ -37,18 +37,18 @@ IHP computes the Learned Heating Slope from detected heating cycles:
    - Temperature gain = end temp − start temp
    - Duration = end time − start time (minus dead time, see below)
    - Cycle slope = (temperature gain ÷ effective duration hours)
-4. **Apply filters**: reject cycles with non-positive slopes and very short effective heating windows
+4. **Apply filters**: reject cycles that heated too slowly (below 0.2 °C/h) and very short effective heating windows
 5. **Average the slopes** across filtered cycles to produce the current LHS.
 
 ### Two Types of LHS
 
 IHP uses two complementary approaches:
 
-**Global LHS** — Simple average of ALL positive-slope cycles regardless of time of day
+**Global LHS** — Simple average of all realistic cycles (slope of at least 0.2 °C/h) regardless of time of day; if no cycle qualifies, the 2.0 °C/h default is used
 - Used as a fallback when no contextual data is available
 - Represents your system's "typical" heating performance
 
-**Contextual LHS** — Per-hour-of-day averages (e.g., cycles starting at 6am average separately from 9pm)
+**Contextual LHS** — Per-hour-of-day averages (e.g., cycles that reach their target around 7am average separately from those around 9pm, so a 7am slot uses what IHP learned preheating for it)
 - More accurate because heating behavior varies by time (thermal mass, occupancy patterns, outdoor conditions)
 - IHP uses contextual LHS when available for the current hour, falls back to global LHS if insufficient data
 
@@ -75,7 +75,9 @@ For the system structure and DDD boundaries behind these calculations, see [Arch
 
 Before a cycle contributes to LHS:
 
-1. **Non-positive slope filter**: Cycles where temperature didn't rise (or fell) are discarded — they contain no useful heating data
+1. **Minimum realistic slope filter**: Cycles that heated slower than 0.2 °C/h are discarded from both the global and the per-hour LHS
+   - Why? A cycle where the temperature didn't rise, or barely rose (e.g. thermostat in safety mode or load shedding), says nothing about how fast the room can actually heat, and would make preheating start far too early
+   - If every cycle of an hour is below the threshold, that hour has no learned value and falls back to the global LHS
 2. **Minimum effective duration filter**: Cycles whose effective heating window (after subtracting dead time) is too short are rejected
    - Why? When dead time ≈ total duration, the slope formula amplifies noise by orders of magnitude (e.g., 100,000°C/h)
    - Default threshold: 5 minutes of effective heating required
@@ -175,9 +177,15 @@ IHP cancels and reschedules active preheating only if:
 1. The recalculation targets the same schedule target time
 2. The newly anticipated start is later than the previously scheduled start
 3. The postponement is at least the configured threshold (default: 15 minutes)
+4. The new anticipated start is still in the future
+
+This is how IHP handles a room that heats faster than predicted: the setpoint goes back to the current schedule, and a timer starts preheating again at the new anticipated start, so the target is still reached on time.
 
 If the new anticipated start moves earlier, IHP keeps current preheating active.
 If the new anticipated start is only slightly later (below threshold), IHP keeps current preheating active.
+If the new anticipated start is already past, IHP keeps current preheating active, since reverting would only restart it at once.
+If the room reaches its target early, IHP keeps preheating active until the slot: the thermostat regulates on the target setpoint.
+If the slot being preheated is removed or moved, IHP reverts the preheating.
 
 ### The Calculation
 
@@ -217,20 +225,11 @@ IHP automatically learns dead time from your heating cycles and refines it over 
 
 The basic calculation is then **adjusted** based on real-world conditions:
 
-#### 1. **Outdoor Temperature Effect**
+#### 1. **Outdoor Temperature**
 
-Colder outdoor air = **More heat loss** = **Need to heat longer**
+Colder outdoor air means more heat loss, so the room heats more slowly. IHP does **not** apply a separate outdoor adjustment to the prediction: the learned heating slope comes from your recent heating cycles, so it already reflects the weather they ran in. An extra fixed factor would count the cold twice and start heating far too early.
 
-```
-Adjustment Factor = 1.0 + (20°C - outdoor_temp) × 0.05
-
-Examples:
-- Outdoor temp 20°C: factor = 1.0 (no adjustment)
-- Outdoor temp 0°C: factor = 2.0 (heat twice as long)
-- Outdoor temp -10°C: factor = 2.5 (heat 2.5× longer)
-```
-
-> **Note:** This adjustment is only applied when an outdoor temperature is available. An outdoor temperature sensor cannot be configured yet, so it is currently skipped.
+When an outdoor temperature source (a sensor or a `weather.*` entity) is configured, IHP records the average outdoor temperature of every heating cycle. This history will let a future version adjust the slope only by the difference between today's weather and the weather of the cycles it was learned from.
 
 #### 2. **Humidity Effect**
 
@@ -323,7 +322,7 @@ Here's the full journey from a scheduled event to IHP triggering heating:
 4. HEATING CYCLE MONITORING
    └─ IHP watches temperature rise
       ├─ Collects VTherm's slope observations
-      ├─ Prevents overshooting (stops early if approaching target)
+      ├─ Postpones preheating if the room heats faster than predicted
       └─ Waits for cycle completion
 
 5. CYCLE COMPLETION & LEARNING

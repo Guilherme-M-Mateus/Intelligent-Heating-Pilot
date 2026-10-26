@@ -83,6 +83,18 @@ class ILhsStorage(ABC):
         pass
 
     @abstractmethod
+    async def delete_cached_contextual_lhs(self, hour: int) -> None:
+        """Remove the cached contextual LHS for the given hour, if any.
+
+        Needed when an hour no longer has a realistic slope: leaving the old
+        entry in place would keep it in use instead of the global LHS.
+
+        Args:
+            hour: Hour of day (0-23) whose contextual LHS must be forgotten.
+        """
+        pass
+
+    @abstractmethod
     async def clear_contextual_cache(self) -> None:
         """Clear all cached contextual LHS entries."""
         pass

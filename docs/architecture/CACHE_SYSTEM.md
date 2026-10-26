@@ -107,8 +107,9 @@ When heating cycles change (startup, retention change, 24h refresh), updates cas
 │                                                                          │
 │  update_contextual_lhs_from_cycles(cycles):                             │
 │    1. Compute contextual LHS by hour from cycles                        │
-│    2. Persist each hour to ILhsStorage (Tier 4)                         │
-│    3. Update _cached_contextual_lhs (Tier 3)                            │
+│    2. Persist each learned hour to ILhsStorage (Tier 4)                 │
+│    3. Delete hours rejected below MINIMUM_REALISTIC_LHS from storage    │
+│    4. Update _cached_contextual_lhs (Tier 3)                            │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -130,6 +131,8 @@ Contextual LHS is populated on-demand per hour to minimize memory usage:
 └─────────────────────────────────────────────────────────────────────────┘
                                     ↓
 ┌─────────────────────────────────────────────────────────────────────────┐
+│  Check: hour X known to fall back to global? (rejected hour)            │
+│    YES → Return global LHS without reading storage or cycles            │
 │  Check: hour X in _cached_contextual_lhs? (Tier 3 memory)               │
 │    YES → Return immediately (fast path)                                 │
 │    NO  → Continue to next tier                                          │
@@ -138,6 +141,8 @@ Contextual LHS is populated on-demand per hour to minimize memory usage:
 ┌─────────────────────────────────────────────────────────────────────────┐
 │  Check: ILhsStorage has hour X? (Tier 4 storage)                        │
 │    YES → Load value, cache in memory (Tier 3), return                   │
+│          (a value below MINIMUM_REALISTIC_LHS is deleted instead and    │
+│           the hour falls back to global)                                │
 │    NO  → Continue to computation                                        │
 └─────────────────────────────────────────────────────────────────────────┘
                                     ↓
@@ -149,6 +154,10 @@ Contextual LHS is populated on-demand per hour to minimize memory usage:
 │    4. Return value                                                      │
 └─────────────────────────────────────────────────────────────────────────┘
 ```
+
+`get_learned_contextual_lhs(hour)` runs the first three checks only and returns
+`None` instead of the global LHS, so sensors can tell a learned contextual slope
+from the fallback.
 
 **Lazy Population Strategy:**
 - Contextual LHS for hour X is only loaded when requested
@@ -293,7 +302,7 @@ cycles = await update_cycles_for_window(device_id, start_time, end_time)
 |------------------------|---------------------------------------------------------------------------|
 | **Heating Cycle**      | A complete heating event: start time, end time, temperature rise          |
 | **LHS**                | Learned Heating Slope (rate of temperature increase in °C/hour)           |
-| **Global LHS**         | Average LHS across all heating cycles (time-agnostic)                     |
+| **Global LHS**         | Average LHS across realistic heating cycles (>= MINIMUM_REALISTIC_LHS, time-agnostic) |
 | **Contextual LHS**     | Hour-specific LHS (e.g., 8am vs 2pm may have different rates)             |
 | **Retention Window**   | Number of historical days used for LHS calculation (e.g., 30 days)        |
 | **Cascade Update**     | Automatic propagation of cycle changes to dependent LHS caches            |

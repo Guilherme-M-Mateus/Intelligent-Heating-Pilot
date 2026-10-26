@@ -13,6 +13,10 @@ class ISchedulerCommander(ABC):
     the scheduler component's run_action service.
 
     See: https://github.com/nielsfaber/scheduler-component/#schedulerrun_action
+
+    Implementations may treat a scheduler that offers no such action (e.g. a
+    native Home Assistant schedule helper) as compute-only: both commands are
+    then no-ops and IHP only exposes the computed anticipation.
     """
 
     @abstractmethod

@@ -13,7 +13,6 @@ from typing import TYPE_CHECKING, cast
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
-from ...domain.interfaces.climate_data_reader_interface import IClimateDataReader
 from ...domain.interfaces.scheduler_reader_interface import ISchedulerReader
 from ...domain.value_objects import ScheduledTimeslot
 from ..vtherm_compat import get_vtherm_attribute
@@ -25,8 +24,13 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 # Default temperature used for native HA schedule entities that don't store temperature.
-# The actual temperature is resolved from the linked VTherm entity when available.
+# The actual temperature is resolved from the VTherm comfort preset when available.
 _DEFAULT_NATIVE_SCHEDULE_TEMPERATURE: float = 20.0
+
+# VTherm preset applied by an ON block of a native HA schedule. While the schedule
+# is off the VTherm holds its off-period setpoint (eco, frost protection...), so the
+# current target temperature cannot describe the upcoming slot.
+_NATIVE_SCHEDULE_PRESET: str = "comfort"
 
 
 class HASchedulerReader(ISchedulerReader):
@@ -45,7 +49,6 @@ class HASchedulerReader(ISchedulerReader):
         hass: HomeAssistant,
         scheduler_entity_ids: list[str],
         vtherm_entity_id: str | None = None,
-        climate_reader: IClimateDataReader | None = None,
     ) -> None:
         """Initialize the scheduler reader adapter.
 
@@ -53,15 +56,12 @@ class HASchedulerReader(ISchedulerReader):
             hass: Home Assistant instance
             scheduler_entity_ids: List of scheduler entity IDs to monitor
             vtherm_entity_id: Optional VTherm climate entity ID used to resolve
-                preset temperatures (e.g., when actions use preset modes).
-            climate_reader: Optional climate data reader used to resolve the
-                current VTherm target temperature for native HA schedule entities
-                (schedule.*) that do not store a temperature themselves.
+                preset temperatures (e.g., when actions use preset modes, or the
+                comfort preset for native HA schedule entities).
         """
         self._hass = hass
         self._scheduler_entity_ids = scheduler_entity_ids
         self._vtherm_entity_id = vtherm_entity_id
-        self._climate_reader = climate_reader
 
     async def get_next_timeslot(self) -> ScheduledTimeslot | None:
         """Retrieve the next scheduled heating timeslot.
@@ -98,20 +98,15 @@ class HASchedulerReader(ISchedulerReader):
                     )
                 continue
 
-            # Native HA schedule entities (schedule.*) use next_event and state-aware logic
-            if entity_id.startswith("schedule."):
-                next_time, target_temp = self._extract_native_schedule_data(state)
-            else:
-                # Skip disabled HACS schedulers (state is "off")
-                if state.state == "off":
-                    device_name = get_entity_name(self._hass, entity_id)
-                    _LOGGER.debug(
-                        "[%s] Scheduler is disabled (state: off), skipping", device_name
-                    )
-                    continue
-
-                # Extract next trigger time and target temperature (HACS format)
-                next_time, target_temp = self._extract_timeslot_data(state)
+            try:
+                next_time, target_temp = self._read_scheduler_timeslot(entity_id, state)
+            except Exception:  # noqa: BLE001 - one malformed scheduler must not block the others
+                _LOGGER.warning(
+                    "[%s] Could not read the next timeslot of this scheduler, skipping it",
+                    get_entity_name(self._hass, entity_id),
+                    exc_info=True,
+                )
+                continue
 
             if next_time and target_temp is not None:
                 # Keep track of the earliest timeslot
@@ -143,6 +138,35 @@ class HASchedulerReader(ISchedulerReader):
             "No valid scheduler timeslot found (check scheduler configuration and preset temperatures)"
         )
         return None
+
+    def _read_scheduler_timeslot(
+        self, entity_id: str, state: State
+    ) -> tuple[datetime | None, float | None]:
+        """Read the next timeslot of one scheduler entity.
+
+        Kept separate from get_next_timeslot so that an unexpected attribute
+        layout in one scheduler can be caught per entity instead of aborting
+        the scan of all configured schedulers.
+
+        Args:
+            entity_id: Scheduler entity ID
+            state: Home Assistant state of that scheduler entity
+
+        Returns:
+            Tuple of (next_time, target_temp), both None for a disabled scheduler
+        """
+        # Native HA schedule entities (schedule.*) use next_event and state-aware logic
+        if entity_id.startswith("schedule."):
+            return self._extract_native_schedule_data(state)
+
+        # Skip disabled HACS schedulers (state is "off")
+        if state.state == "off":
+            device_name = get_entity_name(self._hass, entity_id)
+            _LOGGER.debug("[%s] Scheduler is disabled (state: off), skipping", device_name)
+            return None, None
+
+        # Extract next trigger time and target temperature (HACS format)
+        return self._extract_timeslot_data(state)
 
     def _extract_timeslot_data(self, state: State) -> tuple[datetime | None, float | None]:
         """Extract next trigger time and target temperature from scheduler state.
@@ -238,11 +262,18 @@ class HASchedulerReader(ISchedulerReader):
     def _extract_from_next_entries(self, attrs: dict) -> tuple[datetime | None, float | None]:
         """Extract time and temperature from next_entries fallback format.
 
+        Only the legacy layout, where each entry is a dict carrying its own time
+        and actions, holds data here. scheduler-component publishes next_entries
+        as a list of timeslot indices (ints); such an index points into the same
+        actions list already read through next_slot by the standard path, so it
+        cannot yield anything new and is ignored.
+
         Args:
             attrs: Scheduler entity attributes
 
         Returns:
-            Tuple of (next_time, target_temp)
+            Tuple of (next_time, target_temp), (None, None) when the first entry
+            is not a dict
         """
         next_entries = attrs.get("next_entries")
 
@@ -250,6 +281,9 @@ class HASchedulerReader(ISchedulerReader):
             return None, None
 
         entry = next_entries[0]
+        if not isinstance(entry, dict):
+            _LOGGER.debug("next_entries holds no timeslot details (first entry: %r)", entry)
+            return None, None
 
         # Extract time
         time_raw = entry.get("time") or entry.get("start") or entry.get("trigger_time")
@@ -369,7 +403,8 @@ class HASchedulerReader(ISchedulerReader):
         if isinstance(value, datetime):
             # Already a datetime - ensure timezone is set
             if value.tzinfo is None:
-                return dt_util.as_local(value)
+                localized: datetime = dt_util.as_local(value)
+                return localized
             return value
 
         # Try string parsing using existing method
@@ -378,33 +413,25 @@ class HASchedulerReader(ISchedulerReader):
     def _get_native_schedule_temperature(self) -> float:
         """Get target temperature for native HA schedule entities.
 
-        Since native HA schedules don't store temperature, retrieves it from the
-        injected climate data reader (IClimateDataReader), which is the designated
-        adapter for reading VTherm state. Falls back to
-        _DEFAULT_NATIVE_SCHEDULE_TEMPERATURE if no climate reader is configured or
-        the VTherm temperature cannot be resolved.
+        Native HA schedules only expose when the next ON block starts, not the
+        temperature it applies. The ON block is mapped to the VTherm comfort
+        preset. The current VTherm target is deliberately not used: while the
+        schedule is off it is the off-period setpoint, which would disable
+        preheating (see issue #188). Falls back to
+        _DEFAULT_NATIVE_SCHEDULE_TEMPERATURE when the comfort preset cannot be
+        resolved.
 
         Returns:
-            Target temperature in Celsius from VTherm, or the default value
+            Comfort preset temperature in Celsius, or the default value
         """
-        if self._climate_reader is None:
-            _LOGGER.debug(
-                "No climate reader configured for native schedule temperature resolution, "
-                "using %.1f°C default",
-                _DEFAULT_NATIVE_SCHEDULE_TEMPERATURE,
-            )
-            return _DEFAULT_NATIVE_SCHEDULE_TEMPERATURE
-
-        temp = self._climate_reader.get_current_target_temperature()
+        temp = self._resolve_preset_temperature(_NATIVE_SCHEDULE_PRESET)
         if temp is not None:
-            _LOGGER.debug(
-                "Native schedule temperature resolved from climate reader: %.1f°C",
-                temp,
-            )
+            _LOGGER.debug("Native schedule temperature resolved from comfort preset: %.1f°C", temp)
             return temp
 
         _LOGGER.debug(
-            "Could not resolve temperature from climate reader, using %.1f°C default",
+            "Could not resolve the VTherm comfort preset (entity=%s), using %.1f°C default",
+            self._vtherm_entity_id,
             _DEFAULT_NATIVE_SCHEDULE_TEMPERATURE,
         )
         return _DEFAULT_NATIVE_SCHEDULE_TEMPERATURE
@@ -520,9 +547,14 @@ class HASchedulerReader(ISchedulerReader):
             value = get_vtherm_attribute(state, k)
             if value is not None:
                 try:
-                    return float(value)
+                    temp_value = float(value)
                 except (ValueError, TypeError):
                     _LOGGER.debug("Invalid preset attribute %s=%s", k, value)
+                    continue
+                # Ignore 0 values as they indicate uninitialized presets
+                if temp_value > 0:
+                    return temp_value
+                _LOGGER.debug("Skipping preset attribute %s with 0°C (likely uninitialized)", k)
 
         # Fallback: if this preset is currently active, use current target temperature
         current_preset = get_vtherm_attribute(state, "preset_mode")

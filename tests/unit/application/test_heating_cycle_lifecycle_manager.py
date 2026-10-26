@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import suppress
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from unittest.mock import AsyncMock, Mock
 
@@ -301,6 +302,36 @@ class TestHeatingCycleLifecycleManager:
         assert manager._extraction_queue is not None
 
         # Cleanup: cancel background task to prevent lingering-task warnings
+        if manager._extraction_task is not None:
+            manager._extraction_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await manager._extraction_task
+
+    @pytest.mark.asyncio
+    async def test_on_retention_change_preserves_other_config_fields(
+        self,
+        manager: HeatingCycleLifecycleManager,
+    ) -> None:
+        """A retention change must not reset any other DeviceConfig field (#186)."""
+        # GIVEN: a config that differs from the defaults on several fields
+        custom_config = DeviceConfig(
+            device_id="climate.test_vtherm",
+            vtherm_entity_id="climate.test_vtherm",
+            scheduler_entities=["schedule.heating"],
+            lhs_retention_days=30,
+            auto_learning=False,
+            temp_delta_threshold=0.7,
+            min_cycle_duration_minutes=11,
+            humidity_in_entity_id="sensor.humidity_in",
+        )
+        manager._device_config = custom_config
+
+        # WHEN: retention is changed
+        await manager.on_retention_change(14)
+
+        # THEN: only the retention changed
+        assert manager._device_config == replace(custom_config, lhs_retention_days=14)
+
         if manager._extraction_task is not None:
             manager._extraction_task.cancel()
             with suppress(asyncio.CancelledError):
@@ -1459,6 +1490,47 @@ class TestHeatingCycleLifecycleManager:
         assert (
             len(cycles_passed) == 30
         ), f"Expected 30 cycles passed to contextual LHS, got {len(cycles_passed)}"
+
+    @pytest.mark.asyncio
+    async def test_on_cycles_extracted_persists_dead_time_from_all_cached_cycles(
+        self,
+        manager: HeatingCycleLifecycleManager,
+        mock_heating_cycle_storage: Mock,
+        mock_lhs_storage: Mock,
+        base_datetime: datetime,
+    ) -> None:
+        """Learned dead time must average ALL cached cycles, not only the last batch.
+
+        Issue #185: the batch that finished last decided the persisted dead time.
+        """
+        # GIVEN: Cache holds 3 older cycles at 30 min and 1 new cycle at 10 min
+        old_cycles = [
+            replace(
+                self._create_heating_cycle(base_datetime - timedelta(days=d)),
+                dead_time_cycle_minutes=30.0,
+            )
+            for d in range(1, 4)
+        ]
+        new_cycles = [
+            replace(self._create_heating_cycle(base_datetime), dead_time_cycle_minutes=10.0)
+        ]
+        mock_heating_cycle_storage.get_cache_data = AsyncMock(
+            return_value=HeatingCycleCacheData(
+                device_id="climate.test_vtherm",
+                cycles=tuple(old_cycles + new_cycles),
+                last_search_time=base_datetime,
+                retention_days=30,
+            )
+        )
+        mock_lhs_storage.set_learned_dead_time = AsyncMock()
+
+        # WHEN: Only the new batch is extracted
+        await manager._on_cycles_extracted(new_cycles)
+
+        # THEN: Persisted dead time is the average over all 4 cycles (25 min), not 10
+        mock_lhs_storage.set_learned_dead_time.assert_awaited_once()
+        persisted = mock_lhs_storage.set_learned_dead_time.await_args[0][0]
+        assert persisted == pytest.approx(25.0)
 
     @pytest.mark.asyncio
     async def test_on_cycles_extracted_fallback_without_storage(

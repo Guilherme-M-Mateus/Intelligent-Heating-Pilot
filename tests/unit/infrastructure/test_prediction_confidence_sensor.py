@@ -65,3 +65,16 @@ class TestPredictionConfidenceSensor:
 
         confidence_sensor._handle_anticipation_result({"confidence_level": None})
         assert confidence_sensor.native_value is None
+
+    def test_environmental_data_reflects_payload(
+        self, confidence_sensor: IntelligentHeatingPilotPredictionConfidenceSensor
+    ) -> None:
+        """Environmental availability follows the humidity / cloud values of the event."""
+        confidence_sensor._handle_anticipation_result(
+            {"confidence_level": 0.5, "humidity": 45.0, "cloud_coverage": None}
+        )
+
+        assert confidence_sensor.extra_state_attributes["environmental_data_available"] == {
+            "humidity": True,
+            "cloud_coverage": False,
+        }

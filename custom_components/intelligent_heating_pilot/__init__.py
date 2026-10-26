@@ -17,12 +17,13 @@ import voluptuous as vol
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import EVENT_HOMEASSISTANT_STARTED, Platform
 from homeassistant.core import HomeAssistant, ServiceCall, SupportsResponse, callback
-from homeassistant.exceptions import ServiceValidationError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_track_point_in_time
 from homeassistant.util import dt as dt_util
 
+from .application.use_cases import LearningResetError
 from .const import CONF_IHP_ENABLED, DOMAIN, SERVICE_CALCULATE_ANTICIPATED_START_TIME
 from .heating_application import HeatingApplication
 from .utils.config_helpers import as_bool
@@ -231,8 +232,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 "Please provide a valid IHP sensor entity ID, for example: "
                 "sensor.intelligent_heating_pilot_<device_name>_anticipated_start_time."
             )
-        coord = hass.data[DOMAIN].get(entity_entry.config_entry_id)
-        if not coord or not isinstance(coord, HeatingApplication):
+        coord: HeatingApplication | None = hass.data[DOMAIN].get(entity_entry.config_entry_id)
+        if not isinstance(coord, HeatingApplication):
             raise ServiceValidationError(
                 f"No IHP device found for entity '{entity_id}' "
                 f"(config_entry_id={entity_entry.config_entry_id}). "
@@ -252,9 +253,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             _LOGGER.debug("Entering handle_reset_learning")
 
             coord = _resolve_coordinator(call.data["entity_id"])
-            await coord._orchestrator.reset_all_learning_data(
-                device_id=coord.get_device_id()
-            )
+            if coord._orchestrator is None:
+                raise ServiceValidationError("IHP is not initialized yet for this device.")
+            try:
+                await coord.async_reset_learning()
+            except LearningResetError as err:
+                raise HomeAssistantError(
+                    f"Learning reset incomplete for device {coord.get_device_id()}: {err}"
+                ) from err
             _LOGGER.info(
                 "reset_learning: learning data cleared for device %s", coord.get_device_id()
             )
@@ -306,6 +312,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                         target_temp = vtherm_state.attributes.get("temperature")
             if target_temp is not None:
                 target_temp = float(target_temp)
+
+            if device_coordinator._orchestrator is None:
+                raise ServiceValidationError("IHP is not initialized yet for this device.")
 
             # Delegate to orchestrator (pure routing - no business logic)
             anticipation_data = await device_coordinator._orchestrator.calculate_anticipation_only(
@@ -392,8 +401,6 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
 async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     """Update options and reload integration."""
-    from .const import CONF_DATA_RETENTION_DAYS
-
     coordinator: HeatingApplication | None = hass.data[DOMAIN].get(entry.entry_id)
 
     previous_options = (
@@ -402,29 +409,6 @@ async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
     previous_no_toggle = {k: v for k, v in previous_options.items() if k != CONF_IHP_ENABLED}
     current_no_toggle = {k: v for k, v in entry.options.items() if k != CONF_IHP_ENABLED}
     ihp_enabled = as_bool(entry.options.get(CONF_IHP_ENABLED), default=True)
-
-    # Check if only retention days changed (reconfiguration of cycle refresh)
-    retention_only_changed = (
-        coordinator is not None
-        and previous_no_toggle != current_no_toggle
-        and len(set(previous_no_toggle.keys()) ^ set(current_no_toggle.keys())) == 1
-        and CONF_DATA_RETENTION_DAYS
-        in (set(previous_no_toggle.keys()) ^ set(current_no_toggle.keys()))
-    )
-
-    if retention_only_changed:
-        # Handle retention change without reload
-        new_retention_days = int(entry.options.get(CONF_DATA_RETENTION_DAYS, 10))
-        _LOGGER.info(
-            "[%s] Data retention changed to %d days, updating cycle refresh",
-            entry.entry_id,
-            new_retention_days,
-        )
-        if coordinator:
-            coordinator._options_snapshot = dict(entry.options)
-            coordinator._ihp_enabled = ihp_enabled
-            await coordinator.async_notify_retention_change(new_retention_days)
-        return
 
     # If only the ihp_enabled flag changed, skip full reload
     if coordinator and previous_no_toggle == current_no_toggle:

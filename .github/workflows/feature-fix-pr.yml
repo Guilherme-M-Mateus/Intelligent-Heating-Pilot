@@ -26,9 +26,9 @@ jobs:
 
       - name: Validate branch naming
         if: github.event.pull_request.user.login != 'dependabot[bot]'
+        env:
+          BRANCH: ${{ github.head_ref }}
         run: |
-          BRANCH="${{ github.head_ref }}"
-
           if [[ ! "$BRANCH" =~ ^(copilot/)?(feature|fix)/issue-[0-9]+ ]] && \
              [[ ! "$BRANCH" =~ ^[0-9]{3,}-[a-z][a-z0-9-]*$ ]]; then
             echo "❌ La branche doit suivre le format 'feature/issue-XXX', 'fix/issue-XXX' ou 'NNN-description'"
@@ -41,8 +41,9 @@ jobs:
       - name: Check CHANGELOG update
         id: changelog-check
         if: github.event.pull_request.user.login != 'dependabot[bot]'
+        env:
+          BRANCH: ${{ github.head_ref }}
         run: |
-          BRANCH="${{ github.head_ref }}"
           SECTION="Added"
           if [[ "$BRANCH" =~ ^(copilot/)?fix/ ]]; then
             SECTION="Fixed"
@@ -93,15 +94,16 @@ jobs:
         if: steps.changelog-check.outcome == 'failure' && github.event.pull_request.head.repo.full_name == github.repository
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BRANCH: ${{ github.head_ref }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          BRANCH="${{ github.head_ref }}"
           TYPE="Added"
 
           if [[ "$BRANCH" =~ ^(copilot/)?fix/ ]]; then
             TYPE="Fixed"
           fi
 
-          gh pr comment ${{ github.event.pull_request.number }} --body "⚠️ **CHANGELOG non mis à jour**
+          gh pr comment "$PR_NUMBER" --body "⚠️ **CHANGELOG non mis à jour**
 
           Veuillez ajouter une entrée dans la section \`[Unreleased]\` du CHANGELOG.md :
 
@@ -126,11 +128,12 @@ jobs:
         if: startsWith(github.head_ref, 'feature-') && github.event.pull_request.head.repo.full_name == github.repository
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           DOCS_CHANGED=$(git diff origin/integration --name-only | grep -E '(README.md|docs/)' | wc -l)
 
           if [ "$DOCS_CHANGED" -eq "0" ]; then
-            gh pr comment ${{ github.event.pull_request.number }} --body "📚 **Rappel : Documentation utilisateur**
+            gh pr comment "$PR_NUMBER" --body "📚 **Rappel : Documentation utilisateur**
 
             Cette PR ajoute une nouvelle fonctionnalité. N'oubliez pas de mettre à jour la documentation si nécessaire :
             - \`README.md\` : Guide utilisateur principal
@@ -172,11 +175,13 @@ jobs:
         if: always() && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TESTS_OUTCOME: ${{ steps.tests.outcome }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
-          if [ "${{ steps.tests.outcome }}" == "success" ]; then
-            gh pr comment ${{ github.event.pull_request.number }} --body "✅ **Tests unitaires réussis**"
+          if [ "$TESTS_OUTCOME" == "success" ]; then
+            gh pr comment "$PR_NUMBER" --body "✅ **Tests unitaires réussis**"
           else
-            gh pr comment ${{ github.event.pull_request.number }} --body "❌ **Tests unitaires échoués**
+            gh pr comment "$PR_NUMBER" --body "❌ **Tests unitaires échoués**
 
             Veuillez corriger les tests avant de merger."
           fi

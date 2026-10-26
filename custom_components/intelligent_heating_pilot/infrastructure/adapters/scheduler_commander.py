@@ -20,6 +20,12 @@ _LOGGER = logging.getLogger(__name__)
 SCHEDULER_DOMAIN = "scheduler"
 SERVICE_RUN_ACTION = "run_action"
 
+# Native HA schedule helpers have no service that applies a slot: scheduler.run_action
+# belongs to HACS Scheduler and only accepts its switch entities. IHP delegates
+# actuation to HACS Scheduler, so for native schedules it only computes the
+# anticipation and exposes it as sensors.
+NATIVE_SCHEDULE_PREFIX = "schedule."
+
 
 class HASchedulerCommander(ISchedulerCommander):
     """Home Assistant implementation of scheduler commander.
@@ -28,7 +34,8 @@ class HASchedulerCommander(ISchedulerCommander):
     See: https://github.com/nielsfaber/scheduler-component/#schedulerrun_action
 
     This adapter contains NO business logic - it only translates domain
-    requests into Home Assistant service calls.
+    requests into Home Assistant service calls. Native ``schedule.*`` entities
+    have no such service, so requests on them are not translated (no-op).
     """
 
     def __init__(self, hass: HomeAssistant) -> None:
@@ -56,6 +63,15 @@ class HASchedulerCommander(ISchedulerCommander):
         if not scheduler_entity_id:
             _LOGGER.error("Cannot run action: no scheduler entity configured")
             raise ValueError("Scheduler entity ID not configured")
+
+        if self._is_native_schedule(scheduler_entity_id):
+            _LOGGER.info(
+                "[%s] Native schedule: preheating computed for %s, no scheduler action "
+                "triggered (actuation requires HACS Scheduler)",
+                get_entity_name(self._hass, scheduler_entity_id),
+                target_time.strftime("%H:%M"),
+            )
+            return
 
         # Format time as HH:MM for scheduler service
         trigger_time_str = target_time.strftime("%H:%M")
@@ -104,6 +120,13 @@ class HASchedulerCommander(ISchedulerCommander):
             _LOGGER.error("Cannot cancel action: no scheduler entity configured")
             raise ValueError("Scheduler entity ID not configured")
 
+        if self._is_native_schedule(scheduler_entity_id):
+            _LOGGER.debug(
+                "Native schedule %s: nothing to cancel, no scheduler action was triggered",
+                scheduler_entity_id,
+            )
+            return
+
         # Get current time
         from homeassistant.util import dt as dt_util
 
@@ -137,3 +160,8 @@ class HASchedulerCommander(ISchedulerCommander):
                 exc_info=True,
             )
             raise
+
+    @staticmethod
+    def _is_native_schedule(scheduler_entity_id: str) -> bool:
+        """Return True for a native HA schedule helper (no HACS service to call)."""
+        return scheduler_entity_id.startswith(NATIVE_SCHEDULE_PREFIX)

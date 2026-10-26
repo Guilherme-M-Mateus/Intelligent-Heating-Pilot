@@ -98,7 +98,6 @@ class SimpleDecisionStrategy(IDecisionStrategy):
         prediction = self._prediction_service.predict_heating_time(
             current_temp=environment.indoor_temperature,
             target_temp=next_timeslot.target_temp,
-            outdoor_temp=environment.outdoor_temp,
             humidity=environment.indoor_humidity,
             learned_slope=lhs,
             target_time=next_timeslot.target_time,

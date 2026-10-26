@@ -22,6 +22,7 @@ from ...const import (
     CONF_SCHEDULER_ENTITIES,
     CONF_TASK_RANGE_DAYS,
     CONF_TEMP_DELTA_THRESHOLD,
+    CONF_TEMPERATURE_OUT_ENTITY,
     CONF_VTHERM_ENTITY,
     DEFAULT_ANTICIPATION_RECALC_TOLERANCE_MINUTES,
     DEFAULT_AUTO_LEARNING,
@@ -98,12 +99,14 @@ class HADeviceConfigReader(IDeviceConfigReader):
 
         humidity_in = self._get_config_value(config, options, CONF_HUMIDITY_IN_ENTITY)
         humidity_out = self._get_config_value(config, options, CONF_HUMIDITY_OUT_ENTITY)
+        temperature_out = self._get_config_value(config, options, CONF_TEMPERATURE_OUT_ENTITY)
         cloud_cover = self._get_config_value(config, options, CONF_CLOUD_COVER_ENTITY)
 
-        # Support backward compatibility: CONF_DATA_RETENTION_DAYS takes precedence, fallback to CONF_LHS_RETENTION_DAYS
-        data_retention = self._get_config_value(config, options, CONF_DATA_RETENTION_DAYS)
+        # CONF_LHS_RETENTION_DAYS is the only key the config and options forms write, so it must
+        # win; CONF_DATA_RETENTION_DAYS is only a fallback for legacy entries (#186)
+        data_retention = self._get_config_value(config, options, CONF_LHS_RETENTION_DAYS)
         if data_retention is None:
-            data_retention = self._get_config_value(config, options, CONF_LHS_RETENTION_DAYS)
+            data_retention = self._get_config_value(config, options, CONF_DATA_RETENTION_DAYS)
         lhs_retention_days = int(
             data_retention if data_retention is not None else DEFAULT_LHS_RETENTION_DAYS
         )
@@ -166,6 +169,7 @@ class HADeviceConfigReader(IDeviceConfigReader):
             scheduler_entities=scheduler_entities,
             humidity_in_entity_id=humidity_in,
             humidity_out_entity_id=humidity_out,
+            temperature_out_entity_id=temperature_out,
             cloud_cover_entity_id=cloud_cover,
             lhs_retention_days=lhs_retention_days,
             dead_time_minutes=dead_time_minutes,

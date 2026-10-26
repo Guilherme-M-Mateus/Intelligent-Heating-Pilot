@@ -19,6 +19,8 @@ A configuration dialog will appear. Here's what you need:
 | **VTherm Entity** | ✅ Yes | Your Versatile Thermostat climate entity | Go to **Devices** → Find your thermostat → Copy entity name (e.g., `climate.living_room`) |
 | **Scheduler Entity** | ⚠️ Optional | HACS Scheduler switch(es) that control the VTherm | Go to **Devices** → Find your scheduler → Copy entity name (e.g., `switch.schedule_heating`) |
 
+> **Native Home Assistant schedules**: a `schedule.*` helper can be selected instead of a HACS Scheduler switch. It only tells IHP when the next ON block starts, so IHP computes the anticipated start and the next target from the VTherm **comfort** preset temperature (20 °C if the comfort preset is not set) and exposes them as sensors. IHP does **not** start the heating itself for a native schedule: actual preheating is delegated to HACS Scheduler, which a native schedule does not have. To get real preheating, use a HACS Scheduler switch, or build your own automation on the anticipated start sensor (see [Using IHP Without a Scheduler](#using-ihp-without-a-scheduler)).
+
 > **New in v0.5.0+**: The Scheduler Entity is now **optional**. See [Using IHP Without a Scheduler](#using-ihp-without-a-scheduler) below.
 
 ### Step 3: (Optional) Add Environmental Sensors
@@ -28,10 +30,11 @@ These sensors help IHP make better predictions but are **not required**:
 | Sensor | Purpose | Example |
 |--------|---------|---------|
 | **Indoor Humidity Sensor** | Adjusts calculations for moisture impact | `sensor.living_room_humidity` |
-| **Outdoor Humidity Sensor** | Monitored; not used in the prediction yet | `sensor.outdoor_humidity` |
-| **Cloud Coverage Sensor** | Adjusts for solar gain | `sensor.cloud_coverage` |
+| **Outdoor Temperature Sensor** | Recorded with each heating cycle; not used in the prediction yet | `sensor.outdoor_temperature` or `weather.home` |
+| **Outdoor Humidity Sensor** | Monitored; not used in the prediction yet | `sensor.outdoor_humidity` or `weather.home` |
+| **Cloud Coverage Sensor** | Adjusts for solar gain | `sensor.cloud_coverage` or `weather.home` |
 
-> **Note:** An outdoor temperature sensor cannot be configured yet, so the outdoor temperature adjustment is not applied. The learned heating slope comes from your recent heating cycles and therefore already reflects recent weather.
+> **Weather entities:** The outdoor temperature, outdoor humidity and cloud coverage fields accept either a dedicated sensor or a `weather.*` entity. For a weather entity, IHP reads its `temperature`, `humidity` and `cloud_coverage` attributes, so one weather entity can feed all three fields. Temperatures in °F or K are converted to °C.
 
 ### Step 4: Complete Setup
 
@@ -225,7 +228,7 @@ When heating stops unexpectedly (e.g., safety protection, frost mode), IHP waits
 This setting controls how IHP reacts when anticipation is recalculated while preheating is already active.
 
 **Current behavior:**
-- IHP cancels active preheating only when the newly calculated anticipated start is pushed later by at least this threshold
+- IHP cancels active preheating only when the newly calculated anticipated start is pushed later by at least this threshold and is still in the future; a timer then restarts preheating at the new start
 - If the new anticipated start moves earlier, IHP keeps active preheating running
 - If the postponement is below threshold, IHP keeps active preheating running
 
@@ -388,10 +391,12 @@ After configuration, IHP creates these entities on your device:
 
 | Sensor | What It Shows | Updated |
 |--------|--------------|---------|
-| **Learned Heating Slope** | How fast your room heats (°C/hour) | Every heating cycle |
-| **Dead Time** | System delay in temperature response (seconds) | Every heating cycle |
-| **Anticipation Time** | When heating will start | Every update cycle |
-| **Next Schedule** | Details of next heating event | Every schedule change |
+| **Anticipated Start Time** | When heating will start | Every update cycle |
+| **Next Schedule Time** | Time and target of the next heating event | Every schedule change |
+| **Global Learned Heating Slope** | How fast your room heats (°C/hour), all hours combined | Every heating cycle |
+| **Contextual Learned Heating Slope** | Slope learned for the hour of the next slot; *unknown* until that hour is learned (the global slope is used meanwhile) | Every heating cycle |
+| **Dead Time** | System delay in temperature response (minutes) | Every heating cycle |
+| **Prediction Confidence** | How reliable the current prediction is (%) | Every update cycle |
 
 ### Debug/Status Sensors
 

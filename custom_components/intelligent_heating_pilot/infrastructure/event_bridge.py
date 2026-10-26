@@ -11,10 +11,16 @@ import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING
 
-from homeassistant.core import Event, EventStateChangedData, HomeAssistant, callback
+from homeassistant.core import Event, EventStateChangedData, HomeAssistant, State, callback
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.util import dt as dt_util
 
+from .adapters.utils import (
+    WEATHER_ATTR_TEMPERATURE,
+    WEATHER_DOMAIN,
+    WEATHER_NUMERIC_ATTRIBUTES,
+    read_numeric_state,
+)
 from .vtherm_compat import get_vtherm_attribute
 
 if TYPE_CHECKING:
@@ -27,10 +33,21 @@ _LOGGER = logging.getLogger(__name__)
 # Minimum change in monitored sensor value (humidity %, cloud coverage %) to
 # trigger a recalculation.  Small fluctuations below this threshold are ignored.
 _MONITORED_ENTITY_CHANGE_THRESHOLD = 3.0
+# Outdoor temperature is in degrees, not percent: a 3-degree step would hide
+# most of an evening's cooling, so it gets its own, finer threshold.
+_MONITORED_TEMPERATURE_CHANGE_THRESHOLD = 1.0
+_TEMPERATURE_DEVICE_CLASS = "temperature"
+# Key used for the value of a sensor, whose number is its state.
+_SENSOR_STATE_KEY = "state"
 
 # Tolerance in seconds for anticipated_start_time comparison.  Changes smaller
 # than this are not considered meaningful enough to re-publish the event.
 _ANTICIPATION_TIME_TOLERANCE_SECONDS = 60
+# Tolerances below which a numeric field change is not worth re-publishing.
+_CURRENT_TEMP_TOLERANCE = 0.1
+_LHS_TOLERANCE = 0.05
+# Confidence is a 0-1 ratio: one percentage point is the smallest visible step.
+_CONFIDENCE_TOLERANCE = 0.01
 
 
 class HAEventBridge:
@@ -73,9 +90,11 @@ class HAEventBridge:
         self._get_ihp_enabled = get_ihp_enabled_func or (lambda: True)
         self._entry_id = entry_id
 
-        # Track all entities that should trigger updates
-        self._tracked_entities = (
-            [vtherm_entity_id] + scheduler_entity_ids + self._monitored_entity_ids
+        # Track all entities that should trigger updates. One weather entity may back
+        # several fields: track it once, otherwise each of its updates would fire the
+        # listener (and a recalculation) once per field.
+        self._tracked_entities = list(
+            dict.fromkeys([vtherm_entity_id] + scheduler_entity_ids + self._monitored_entity_ids)
         )
 
         # Listener cleanup callbacks
@@ -87,6 +106,13 @@ class HAEventBridge:
         # Deduplication: remember the last event data that was published so we
         # can skip firing when nothing meaningful has changed.
         self._last_published_data: dict | None = None
+        # Set when sensors must re-read the coordinator even if the anticipation
+        # itself did not change (e.g. after a learning reset).
+        self._force_next_publish = False
+
+        # Monitored values last acted on, per (entity_id, value key). Comparing to
+        # these rather than to the previous state lets a slow drift add up.
+        self._monitored_references: dict[tuple[str, str], float] = {}
 
         # Track active tasks for proper shutdown
         self._active_tasks: set = set()
@@ -146,6 +172,16 @@ class HAEventBridge:
         elif not meaningful:
             _LOGGER.debug("Entity %s change not actionable, skipping recalculation", entity_id)
 
+    def request_forced_publish(self) -> None:
+        """Recalculate and publish the next event even if nothing changed.
+
+        Sensors such as the LHS ones read their value from the coordinator and
+        only refresh on this event, so after a learning reset the event must
+        not be dropped as a duplicate.
+        """
+        self._force_next_publish = True
+        self._request_recalculate()
+
     def _request_recalculate(self) -> None:
         """Request a recalculation with coalescing.
 
@@ -194,6 +230,8 @@ class HAEventBridge:
 
         - The enabled / disabled state (on / off) toggled.
         - The ``next_trigger`` timestamp changed (different upcoming slot).
+        - The ``next_event`` timestamp changed (native ``schedule.*`` entities,
+          e.g. tomorrow's ON time moved while the schedule is off).
         - The ``actions`` attribute changed (different target temperature / preset).
         """
         old_state = event.data.get("old_state")
@@ -213,14 +251,18 @@ class HAEventBridge:
         if old_attrs.get("next_trigger") != new_attrs.get("next_trigger"):
             return True
 
+        if old_attrs.get("next_event") != new_attrs.get("next_event"):
+            return True
+
         # Target temperature / actions changed
         return bool(old_attrs.get("actions") != new_attrs.get("actions"))
 
     def _has_meaningful_monitored_change(self, event: Event[EventStateChangedData]) -> bool:
-        """Return True only when a monitored sensor value changed significantly.
+        """Return True only when a monitored value moved significantly.
 
-        Tiny fluctuations in humidity or cloud coverage sensors are ignored.
-        Availability transitions are always considered meaningful.
+        Values are compared to the last value acted on, so tiny fluctuations are
+        ignored while a slow drift still triggers once it adds up. Availability
+        transitions are always considered meaningful.
         """
         old_state = event.data.get("old_state")
         new_state = event.data.get("new_state")
@@ -240,13 +282,65 @@ class HAEventBridge:
         if old_unavailable and new_unavailable:
             return False
 
-        try:
-            old_val = float(str(old_state.state))
-            new_val = float(str(new_state.state))
-            return abs(new_val - old_val) >= _MONITORED_ENTITY_CHANGE_THRESHOLD
-        except (TypeError, ValueError):
-            # Non-numeric state: trigger on any state string change
+        new_values = self._monitored_values(new_state)
+        if not new_values and new_state.domain != WEATHER_DOMAIN:
+            # Non-numeric sensor: trigger on any state string change
             return bool(old_state.state != new_state.state)
+
+        entity_id = new_state.entity_id
+        old_values = self._monitored_values(old_state)
+        meaningful = False
+        for key in new_values.keys() | old_values.keys():
+            reference_key = (entity_id, key)
+            if reference_key not in self._monitored_references and key in old_values:
+                # First sighting: the previous value is the baseline the drift adds to
+                self._monitored_references[reference_key] = old_values[key]
+            reference = self._monitored_references.get(reference_key)
+            new_val = new_values.get(key)
+            if reference is None or new_val is None:
+                # Value appearing or disappearing is actionable
+                meaningful = meaningful or reference is not new_val
+                continue
+            if abs(new_val - reference) >= self._change_threshold(new_state, key):
+                meaningful = True
+
+        if meaningful:
+            # A recalculation reads every value, so they all become the new reference
+            for key in old_values.keys() - new_values.keys():
+                self._monitored_references.pop((entity_id, key), None)
+            for key, value in new_values.items():
+                self._monitored_references[(entity_id, key)] = value
+        return meaningful
+
+    @staticmethod
+    def _monitored_values(state: State) -> dict[str, float]:
+        """Return the numeric values carried by a monitored entity state.
+
+        A weather state is a condition string that IHP does not use, so only its
+        numeric attributes count. A sensor carries its value in the state.
+        """
+        if state.domain == WEATHER_DOMAIN:
+            keys: tuple[str, ...] = WEATHER_NUMERIC_ATTRIBUTES
+        else:
+            keys = (_SENSOR_STATE_KEY,)
+        values = {}
+        for key in keys:
+            value = read_numeric_state(state, key)
+            if value is not None:
+                values[key] = value
+        return values
+
+    @staticmethod
+    def _change_threshold(state: State, key: str) -> float:
+        """Return the minimum change worth a recalculation for this value."""
+        is_temperature = (
+            key == WEATHER_ATTR_TEMPERATURE
+            if state.domain == WEATHER_DOMAIN
+            else state.attributes.get("device_class") == _TEMPERATURE_DEVICE_CLASS
+        )
+        if is_temperature:
+            return _MONITORED_TEMPERATURE_CHANGE_THRESHOLD
+        return _MONITORED_ENTITY_CHANGE_THRESHOLD
 
     def _is_meaningful_change_from_last(self, new_data: dict) -> bool:
         """Return True when *new_data* differs meaningfully from the last published event.
@@ -262,23 +356,14 @@ class HAEventBridge:
             if new_data.get(key) != last.get(key):
                 return True
 
-        # Current indoor temperature (0.1 °C tolerance)
-        new_temp = new_data.get("current_temp")
-        last_temp = last.get("current_temp")
-        # Transition between "no data" and a real temperature is always meaningful
-        if (new_temp is None) != (last_temp is None):
-            return True
-        if new_temp is not None and last_temp is not None and abs(new_temp - last_temp) >= 0.1:
-            return True
-
-        # Learned heating slope (0.05 °C/h tolerance)
-        new_lhs = new_data.get("learned_heating_slope")
-        last_lhs = last.get("learned_heating_slope")
-        # Transition between "no data" and a real slope is always meaningful
-        if (new_lhs is None) != (last_lhs is None):
-            return True
-        if new_lhs is not None and last_lhs is not None and abs(new_lhs - last_lhs) >= 0.05:
-            return True
+        numeric_tolerances = (
+            ("current_temp", _CURRENT_TEMP_TOLERANCE),
+            ("learned_heating_slope", _LHS_TOLERANCE),
+            ("confidence_level", _CONFIDENCE_TOLERANCE),
+        )
+        for key, tolerance in numeric_tolerances:
+            if self._numeric_changed(new_data.get(key), last.get(key), tolerance):
+                return True
 
         # Anticipated start time (1-minute tolerance)
         new_start = new_data.get("anticipated_start_time")
@@ -305,6 +390,16 @@ class HAEventBridge:
             return True
 
         return False
+
+    @staticmethod
+    def _numeric_changed(new: float | None, last: float | None, tolerance: float) -> bool:
+        """Return True when a numeric field moved by at least *tolerance*.
+
+        A transition between "no data" and a real value is always a change.
+        """
+        if (new is None) != (last is None):
+            return True
+        return new is not None and last is not None and abs(new - last) >= tolerance
 
     def _handle_vtherm_change(self, event: Event[EventStateChangedData]) -> None:
         """Handle VTherm state changes (temperature filter + recalculation trigger).
@@ -368,6 +463,8 @@ class HAEventBridge:
                 "learned_heating_slope": anticipation_data.get("learned_heating_slope"),
                 "confidence_level": anticipation_data.get("confidence_level"),
                 "scheduler_entity": anticipation_data.get("scheduler_entity"),
+                "humidity": anticipation_data.get("humidity"),
+                "cloud_coverage": anticipation_data.get("cloud_coverage"),
             }
         else:
             event_data = {
@@ -380,9 +477,12 @@ class HAEventBridge:
                 "learned_heating_slope": anticipation_data.get("learned_heating_slope"),
                 "confidence_level": None,
                 "scheduler_entity": None,
+                "humidity": anticipation_data.get("humidity"),
+                "cloud_coverage": anticipation_data.get("cloud_coverage"),
             }
 
-        if self._is_meaningful_change_from_last(event_data):
+        if self._force_next_publish or self._is_meaningful_change_from_last(event_data):
+            self._force_next_publish = False
             self._hass.bus.async_fire(
                 "intelligent_heating_pilot_anticipation_calculated",
                 event_data,

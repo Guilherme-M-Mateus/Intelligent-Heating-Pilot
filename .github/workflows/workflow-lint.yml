@@ -1,0 +1,50 @@
+name: Workflow Lint
+
+# Static analysis of the GitHub Actions workflows themselves:
+#  - actionlint: syntax, expression typing and shellcheck on every `run:` script
+#  - zizmor: security audit (e.g. template injection through `${{ }}` in `run:`)
+
+on:
+  pull_request:
+    branches:
+      - integration
+      - main
+    paths:
+      - '.github/workflows/**'
+      - '.github/zizmor.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Only shellcheck warnings and errors fail the job: the pre-existing
+      # info/style findings (unquoted $GITHUB_OUTPUT, ...) are not blocking.
+      - name: Run actionlint
+        uses: docker://rhysd/actionlint:1.7.12
+        env:
+          SHELLCHECK_OPTS: --severity=warning
+        with:
+          args: -color
+
+  zizmor:
+    name: zizmor
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      # Rules enabled/disabled in .github/zizmor.yml
+      - name: Run zizmor
+        run: pipx run zizmor==1.31.1 --no-progress --format plain .github/workflows

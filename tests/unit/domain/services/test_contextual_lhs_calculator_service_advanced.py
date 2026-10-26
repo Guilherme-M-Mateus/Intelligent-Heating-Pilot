@@ -58,13 +58,13 @@ class TestContextualLHSCalculatorServiceAdvanced:
 
     # ===== Test: Cycle Grouping Accuracy =====
 
-    def test_cycles_grouped_only_by_start_hour_not_end_hour(
+    def test_cycles_grouped_only_by_end_hour_not_start_hour(
         self, service: ContextualLHSCalculatorService, base_datetime: datetime
     ) -> None:
-        """Test that grouping uses start_time.hour, not end_time.hour.
+        """Test that grouping uses end_time.hour, not start_time.hour.
 
-        RED: Cycle starting at 23:50, ending at 00:30 next day.
-        Should be in hour 23, not hour 0.
+        Cycle starting at 23:50, ending at 00:30 next day reached its target
+        during hour 0, which is the hour a 00:xx slot looks up (#183).
         """
         cycle = self._create_cycle(
             start_time=base_datetime.replace(hour=23, minute=50),
@@ -73,11 +73,11 @@ class TestContextualLHSCalculatorServiceAdvanced:
             end_temp=20.0,
         )
 
-        grouped = service.group_cycles_by_start_hour([cycle])
+        grouped = service.group_cycles_by_hour([cycle])
 
-        # Must be in hour 23
-        assert len(grouped[23]) == 1
-        assert len(grouped[0]) == 0
+        # Must be in hour 0
+        assert len(grouped[0]) == 1
+        assert len(grouped[23]) == 0
 
     def test_all_hours_initialized_in_grouped_result(
         self, service: ContextualLHSCalculatorService, base_datetime: datetime
@@ -87,12 +87,12 @@ class TestContextualLHSCalculatorServiceAdvanced:
         RED: Result dict must always have keys 0-23.
         """
         cycle = self._create_cycle(
-            start_time=base_datetime.replace(hour=6),
+            start_time=base_datetime.replace(hour=5),
             start_temp=18.0,
             end_temp=20.0,
         )
 
-        grouped = service.group_cycles_by_start_hour([cycle])
+        grouped = service.group_cycles_by_hour([cycle])
 
         # Must have exactly 24 keys: 0-23
         assert len(grouped) == 24
@@ -115,14 +115,14 @@ class TestContextualLHSCalculatorServiceAdvanced:
         """
         cycles = [
             self._create_cycle(
-                start_time=base_datetime.replace(hour=6, minute=i * 10),
+                start_time=base_datetime.replace(hour=5, minute=i * 10),
                 start_temp=18.0,
                 end_temp=20.0,
             )
             for i in range(5)
         ]
 
-        grouped = service.group_cycles_by_start_hour(cycles)
+        grouped = service.group_cycles_by_hour(cycles)
 
         assert len(grouped[6]) == 5
 
@@ -136,8 +136,8 @@ class TestContextualLHSCalculatorServiceAdvanced:
         RED: Should return that cycle's LHS.
         """
         cycle = self._create_cycle(
-            start_time=base_datetime.replace(hour=6),
-            end_time=base_datetime.replace(hour=7),
+            start_time=base_datetime.replace(hour=5),
+            end_time=base_datetime.replace(hour=6),
             start_temp=18.0,
             end_temp=20.0,
         )
@@ -156,14 +156,14 @@ class TestContextualLHSCalculatorServiceAdvanced:
         """
         cycles = [
             self._create_cycle(
-                start_time=base_datetime.replace(hour=6, minute=0),
-                end_time=base_datetime.replace(hour=7, minute=0),
+                start_time=base_datetime.replace(hour=5, minute=0),
+                end_time=base_datetime.replace(hour=6, minute=0),
                 start_temp=18.0,
                 end_temp=20.0,  # 2.0°C/h
             ),
             self._create_cycle(
-                start_time=base_datetime.replace(day=7, hour=6, minute=0),
-                end_time=base_datetime.replace(day=7, hour=7, minute=0),
+                start_time=base_datetime.replace(day=7, hour=5, minute=0),
+                end_time=base_datetime.replace(day=7, hour=6, minute=0),
                 start_temp=18.0,
                 end_temp=22.0,  # 4.0°C/h
             ),
@@ -202,14 +202,14 @@ class TestContextualLHSCalculatorServiceAdvanced:
         """
         cycles = [
             self._create_cycle(
-                start_time=base_datetime.replace(hour=6, minute=0),
+                start_time=base_datetime.replace(hour=5, minute=0),
                 start_temp=18.0,
-                end_temp=20.0,  # 2.0°C/h
+                end_temp=20.0,  # 2.0°C/h, ends 06:00
             ),
             self._create_cycle(
-                start_time=base_datetime.replace(hour=7, minute=0),
+                start_time=base_datetime.replace(hour=6, minute=0),
                 start_temp=18.0,
-                end_temp=25.0,  # 7.0°C/h
+                end_temp=25.0,  # 7.0°C/h, ends 07:00
             ),
         ]
 
@@ -254,7 +254,7 @@ class TestContextualLHSCalculatorServiceAdvanced:
         RED: Edge case for boundary.
         """
         cycle = self._create_cycle(
-            start_time=base_datetime.replace(hour=0),
+            start_time=base_datetime - timedelta(hours=1),
             start_temp=18.0,
             end_temp=20.0,
         )
@@ -271,7 +271,7 @@ class TestContextualLHSCalculatorServiceAdvanced:
         RED: Edge case for boundary.
         """
         cycle = self._create_cycle(
-            start_time=base_datetime.replace(hour=23),
+            start_time=base_datetime.replace(hour=22),
             start_temp=18.0,
             end_temp=20.0,
         )
@@ -401,7 +401,7 @@ class TestContextualLHSCalculatorServiceAdvanced:
             ),
         ]
 
-        result = service.calculate_contextual_lhs_for_hour(cycles, 6)
+        result = service.calculate_contextual_lhs_for_hour(cycles, 7)
 
         assert result is not None
         # Only the positive cycle (2.0°C/h) should count
@@ -430,7 +430,7 @@ class TestContextualLHSCalculatorServiceAdvanced:
             ),
         ]
 
-        result = service.calculate_contextual_lhs_for_hour(cycles, 6)
+        result = service.calculate_contextual_lhs_for_hour(cycles, 7)
 
         assert result is not None
         # Only the positive cycle (2.0°C/h) should count
@@ -482,7 +482,7 @@ class TestContextualLHSCalculatorServiceAdvanced:
         """
         cycles = [
             self._create_cycle(
-                start_time=base_datetime + timedelta(days=i, hours=6),
+                start_time=base_datetime + timedelta(days=i, hours=5),
                 start_temp=18.0,
                 end_temp=20.0,
             )

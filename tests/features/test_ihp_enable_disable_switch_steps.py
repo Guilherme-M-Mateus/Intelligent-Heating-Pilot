@@ -25,7 +25,6 @@ from custom_components.intelligent_heating_pilot.application.orchestrator import
 )
 from custom_components.intelligent_heating_pilot.application.use_cases import (
     CalculateAnticipationUseCase,
-    CheckOvershootRiskUseCase,
     ControlPreheatingUseCase,
     ScheduleAnticipationActionUseCase,
     UpdateCacheDataUseCase,
@@ -160,24 +159,17 @@ def orchestrator_ihp_switch(mock_adapters_ihp_switch):
         control_preheating_use_case=control_preheating,
     )
 
-    check_overshoot_risk = CheckOvershootRiskUseCase(
-        scheduler_reader=mock_adapters_ihp_switch["scheduler_reader"],
-        environment_reader=mock_adapters_ihp_switch["environment_reader"],
-        climate_data_reader=mock_adapters_ihp_switch["climate_data_reader"],
-        control_preheating=control_preheating,
-    )
-
     update_cache = UpdateCacheDataUseCase(
         cycle_storage=mock_adapters_ihp_switch["heating_cycle_lifecycle_manager"],
         lhs_storage=mock_adapters_ihp_switch["model_storage"],
         lhs_lifecycle_manager=mock_adapters_ihp_switch["lhs_lifecycle_manager"],
+        heating_cycle_manager=mock_adapters_ihp_switch["heating_cycle_lifecycle_manager"],
     )
 
     orchestrator = HeatingOrchestrator(
         calculate_anticipation=calculate_anticipation,
         control_preheating=control_preheating,
         schedule_anticipation_action=schedule_anticipation_action,
-        check_overshoot_risk=check_overshoot_risk,
         update_cache=update_cache,
     )
     return orchestrator
@@ -601,9 +593,19 @@ def preheating_scheduled_at(ihp_switch_context, hour):
     parsers.parse("the VTherm temperature setpoint should be raised to {temp:d}°C at {hour:d}:30")
 )
 def vtherm_setpoint_raised(ihp_switch_context, mock_adapters_ihp_switch, temp, hour):
-    """THEN: Verify temperature setpoint was changed for preheating."""
-    # run_action should have been called to trigger heating
-    mock_adapters_ihp_switch["scheduler_commander"].run_action.assert_called()
+    """THEN: Verify temperature setpoint is changed for preheating by the given time.
+
+    A start still in the future is armed as a timer; firing it stands for the clock
+    reaching the anticipated start.
+    """
+    run_action = mock_adapters_ihp_switch["scheduler_commander"].run_action
+    if not run_action.called:
+        schedule_timer = mock_adapters_ihp_switch["timer_scheduler"].schedule_timer
+        assert schedule_timer.called, "Preheating should be triggered or scheduled"
+        fire_at, timer_callback = schedule_timer.call_args.args
+        assert fire_at <= datetime(2025, 2, 10, hour, 30, 0, tzinfo=UTC)
+        asyncio.run(timer_callback())
+    run_action.assert_called()
 
 
 @then(parsers.parse("the home should reach target temperature by {hour:d}:00"))

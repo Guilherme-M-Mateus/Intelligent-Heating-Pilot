@@ -341,6 +341,32 @@ async def test_clear_contextual_cache(storage: HALhsStorage, mock_store: Mock) -
 
 
 @pytest.mark.asyncio
+async def test_delete_cached_contextual_lhs_removes_only_that_hour(
+    storage: HALhsStorage, mock_store: Mock
+) -> None:
+    """Deleting an hour forgets it and keeps the other hours."""
+    await storage.set_cached_contextual_lhs(8, 2.6, datetime.now())
+    await storage.set_cached_contextual_lhs(22, 0.15, datetime.now())
+    mock_store.async_save.reset_mock()
+
+    await storage.delete_cached_contextual_lhs(22)
+
+    assert await storage.get_cached_contextual_lhs(22) is None
+    assert (await storage.get_cached_contextual_lhs(8)).value == 2.6
+    mock_store.async_save.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_delete_cached_contextual_lhs_missing_hour_does_not_save(
+    storage: HALhsStorage, mock_store: Mock
+) -> None:
+    """Deleting an hour that was never stored writes nothing."""
+    await storage.delete_cached_contextual_lhs(5)
+
+    mock_store.async_save.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_contextual_cache_retention_disabled_noop(
     mock_hass: Mock, entry_id: str, mock_store: Mock
 ) -> None:
