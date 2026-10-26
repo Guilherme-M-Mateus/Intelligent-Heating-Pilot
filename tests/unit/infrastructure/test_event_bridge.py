@@ -168,6 +168,26 @@ class TestHasMeaningfulSchedulerChange:
         )
         assert bridge._has_meaningful_scheduler_change(event) is True
 
+    def test_native_schedule_next_event_changed_is_meaningful(self):
+        """Regression #188: moving the next ON time of a native schedule must recalculate."""
+        bridge = _make_bridge()
+        event = _make_event(
+            "schedule.heating",
+            _make_state("off", {"next_event": "2025-01-02T07:00:00+00:00"}),
+            _make_state("off", {"next_event": "2025-01-02T06:30:00+00:00"}),
+        )
+        assert bridge._has_meaningful_scheduler_change(event) is True
+
+    def test_native_schedule_same_next_event_is_not_meaningful(self):
+        """An attribute-only update with an unchanged next_event is ignored."""
+        bridge = _make_bridge()
+        event = _make_event(
+            "schedule.heating",
+            _make_state("off", {"next_event": "2025-01-02T07:00:00+00:00", "icon": "mdi:a"}),
+            _make_state("off", {"next_event": "2025-01-02T07:00:00+00:00", "icon": "mdi:b"}),
+        )
+        assert bridge._has_meaningful_scheduler_change(event) is False
+
     def test_actions_changed_is_meaningful(self):
         bridge = _make_bridge()
         old_actions = [{"entity_id": "climate.vtherm", "service_data": {"temperature": 19}}]
