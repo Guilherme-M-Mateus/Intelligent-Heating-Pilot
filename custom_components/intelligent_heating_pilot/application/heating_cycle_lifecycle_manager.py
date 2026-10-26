@@ -179,6 +179,7 @@ class HeatingCycleLifecycleManager:
 
             if pruned:
                 _LOGGER.debug("Cycles pruned — recalculating LHS and dead time")
+                self.invalidate_memory_cache()
                 try:
                     cache_data = await self._heating_cycle_storage.get_cache_data(
                         self._device_config.device_id
@@ -249,6 +250,15 @@ class HeatingCycleLifecycleManager:
         await self.refresh_heating_cycle_cache()
 
         _LOGGER.debug("Exiting HeatingCycleLifecycleManager.on_retention_change")
+
+    @property
+    def device_id(self) -> str:
+        """Return the id cycles are stored under: the config entry id, not the VTherm entity id.
+
+        Readers must use this id, since cycles stored for the device are
+        invisible under any other key.
+        """
+        return self._device_config.device_id
 
     def invalidate_memory_cache(self) -> None:
         """Drop the in-memory cycles cache.
@@ -604,6 +614,8 @@ class HeatingCycleLifecycleManager:
                     len(cycles),
                     search_end_time,
                 )
+                # Cycles read for a target date were cached before these ones existed.
+                self.invalidate_memory_cache()
 
                 # Load ALL cycles from cache for LHS recalculation.
                 # get_cache_data() is cache-only (no Recorder calls).

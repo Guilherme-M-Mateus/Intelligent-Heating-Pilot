@@ -165,12 +165,10 @@ class CalculateAnticipationUseCase:
         humidity = environment.indoor_humidity if environment else None
         cloud_coverage = environment.cloud_coverage if environment else None
 
-        # Get device ID
-        vtherm_id = self._climate_data_reader.get_vtherm_entity_id()
-
-        # Get heating cycles for LHS calculation
+        # Cycles are stored under the device (config entry) id; the VTherm entity id
+        # finds none, which silently disabled dead time learning from cycles.
         heating_cycles = await self._heating_cycle_manager.get_cycles_for_target_time(
-            device_id=vtherm_id,
+            device_id=self._heating_cycle_manager.device_id,
             target_time=target_time,
         )
 
@@ -195,7 +193,7 @@ class CalculateAnticipationUseCase:
             avg_dead_time = self._dead_time_calculator.calculate_average_dead_time(heating_cycles)
             if avg_dead_time is not None and avg_dead_time > 0:
                 dead_time = avg_dead_time
-                _LOGGER.info(
+                _LOGGER.debug(
                     "Learned dead_time from %d cycles: %.1f minutes",
                     len(heating_cycles),
                     dead_time,
