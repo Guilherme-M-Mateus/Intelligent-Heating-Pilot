@@ -313,7 +313,8 @@ class IntelligentHeatingPilotContextualLearnedSlopeSensor(IntelligentHeatingPilo
         # Try to get contextual LHS from coordinator cache for scheduled hour
         contextual_lhs = self.coordinator.get_contextual_learned_heating_slope(schedule_hour)
 
-        if contextual_lhs is None or contextual_lhs == 2.0:  # Default value means no data
+        # None means no learned value for this hour: the sensor shows unknown
+        if contextual_lhs is None:
             return None
 
         # Round to 2 decimal places for cleaner display and return as float
