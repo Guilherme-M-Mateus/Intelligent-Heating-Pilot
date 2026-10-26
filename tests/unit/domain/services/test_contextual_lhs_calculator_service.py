@@ -427,6 +427,46 @@ class TestContextualLHSCalculatorService:
 
         assert result == pytest.approx(slow_slope, abs=0.001)
 
+    def test_contextual_lhs_excludes_unrealistic_cycle_from_hour_average(
+        self, service: ContextualLHSCalculatorService, base_datetime: datetime
+    ) -> None:
+        """An unrealistic cycle is left out of its hour, like in the global LHS (#223)."""
+        cycles = [
+            self._create_cycle(
+                start_time=base_datetime.replace(hour=6),
+                end_time=base_datetime.replace(hour=7),
+                start_temp=17.0,
+                end_temp=20.0,  # 3.0°C/h
+            ),
+            self._create_cycle(
+                start_time=(base_datetime + timedelta(days=1)).replace(hour=6),
+                end_time=(base_datetime + timedelta(days=1)).replace(hour=7),
+                start_temp=20.0,
+                end_temp=20.1,  # 0.1°C/h — unrealistic, excluded
+            ),
+        ]
+
+        assert service.calculate_contextual_lhs_for_hour(cycles, 7) == pytest.approx(3.0)
+        assert service.calculate_contextual_lhs_by_hour(cycles).learned[7] == pytest.approx(3.0)
+
+    def test_contextual_lhs_by_hour_does_not_reject_hour_without_heating(
+        self, service: ContextualLHSCalculatorService, base_datetime: datetime
+    ) -> None:
+        """An hour whose cycles never heated has no data; it is not reported as rejected."""
+        cycles = [
+            self._create_cycle(
+                start_time=base_datetime.replace(hour=6),
+                end_time=base_datetime.replace(hour=7),
+                start_temp=20.0,
+                end_temp=20.0,  # 0.0°C/h
+            ),
+        ]
+
+        result = service.calculate_contextual_lhs_by_hour(cycles)
+
+        assert 7 not in result.learned
+        assert 7 not in result.rejected_hours
+
     def test_calculate_all_contextual_lhs_reports_unrealistic_hour_as_none(
         self, service: ContextualLHSCalculatorService, base_datetime: datetime
     ) -> None:

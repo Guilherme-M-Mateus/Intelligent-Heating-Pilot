@@ -12,6 +12,7 @@ import pytest
 
 from custom_components.intelligent_heating_pilot.domain.constants import (
     DEFAULT_LEARNED_SLOPE,
+    MINIMUM_REALISTIC_LHS,
 )
 from custom_components.intelligent_heating_pilot.domain.services.global_lhs_calculator_service import (
     GlobalLHSCalculatorService,
@@ -277,6 +278,68 @@ class TestGlobalLHSCalculatorService:
                 start_temp=20.0,
                 end_temp=18.0,  # -2.0°C/h
             ),
+        ]
+
+        result = service.calculate_global_lhs(cycles)
+
+        assert result == DEFAULT_LEARNED_SLOPE
+
+    def test_calculate_global_lhs_excludes_cycles_below_realistic_minimum(
+        self, service: GlobalLHSCalculatorService, base_datetime: datetime
+    ) -> None:
+        """Cycles that barely heated must not drag the global LHS down (#223).
+
+        The contextual LHS already rejects them, so the global LHS uses the same rule.
+        """
+        cycles = [
+            self._create_cycle(
+                start_time=base_datetime,
+                start_temp=18.0,
+                end_temp=20.0,  # 2.0°C/h — realistic
+            ),
+            self._create_cycle(
+                start_time=base_datetime + timedelta(days=1),
+                start_temp=20.0,
+                end_temp=20.1,  # 0.1°C/h — unrealistic, excluded
+            ),
+            self._create_cycle(
+                start_time=base_datetime + timedelta(days=2),
+                start_temp=20.0,
+                end_temp=20.15,  # 0.15°C/h — unrealistic, excluded
+            ),
+        ]
+
+        result = service.calculate_global_lhs(cycles)
+
+        assert result == pytest.approx(2.0, abs=0.01)
+
+    def test_calculate_global_lhs_keeps_cycle_at_realistic_minimum(
+        self, service: GlobalLHSCalculatorService, base_datetime: datetime
+    ) -> None:
+        """A slow cycle exactly at MINIMUM_REALISTIC_LHS is still learned from."""
+        cycles = [
+            self._create_cycle(
+                start_time=base_datetime,
+                start_temp=20.0,
+                end_temp=20.0 + MINIMUM_REALISTIC_LHS,
+            ),
+        ]
+
+        result = service.calculate_global_lhs(cycles)
+
+        assert result == pytest.approx(MINIMUM_REALISTIC_LHS, abs=0.001)
+
+    def test_calculate_global_lhs_returns_default_when_all_cycles_unrealistic(
+        self, service: GlobalLHSCalculatorService, base_datetime: datetime
+    ) -> None:
+        """With only unrealistic cycles, the global LHS falls back to the default (#223)."""
+        cycles = [
+            self._create_cycle(
+                start_time=base_datetime + timedelta(days=day),
+                start_temp=20.0,
+                end_temp=20.0 + slope,
+            )
+            for day, slope in enumerate((0.1, 0.15, 0.05))
         ]
 
         result = service.calculate_global_lhs(cycles)
