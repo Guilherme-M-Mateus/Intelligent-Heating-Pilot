@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Reset and new learning take effect without a restart** (#181) – `reset_learning` clears everything and relearns from history immediately, and the sensors show the new slopes and dead time as soon as they are learned.
 - **No more comfort/eco flapping before a slot** (#182) – A started preheat is kept until its slot, and reverted only if the slot is removed or moved.
 - **Changing the retention period no longer resets the device configuration** (#186), and services called during startup return a clear error.
+- **Cycles that barely heated no longer drag the room's learned slope down** (#223) – Cycles below 0.2 °C/h (e.g. thermostat in safety mode or load shedding) are now left out of the room's learned slope, with the same rule as the per-hour slope. If no cycle is left, the 2.0 °C/h default is used, so preheating no longer starts hours too early.
 
 ### Changed
 - **Outdoor temperature** (#180, #190) – An outdoor temperature sensor or a `weather.*` entity can now be configured (°F and K are converted) and is recorded with each heating cycle, for a future weather-aware adjustment. The fixed outdoor correction, which counted the cold twice, is removed.

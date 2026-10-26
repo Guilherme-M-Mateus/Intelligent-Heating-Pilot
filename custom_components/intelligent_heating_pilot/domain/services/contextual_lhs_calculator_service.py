@@ -11,6 +11,7 @@ from datetime import UTC, tzinfo
 
 from ..constants import MINIMUM_REALISTIC_LHS
 from ..value_objects import ContextualLHSByHour, HeatingCycle
+from .learning_cycle_filter import filter_realistic_cycles
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -121,15 +122,6 @@ class ContextualLHSCalculatorService:
         if avg_lhs is None:
             return None
 
-        if avg_lhs < MINIMUM_REALISTIC_LHS:
-            _LOGGER.debug(
-                "Contextual LHS for hour %d is unrealistic (%.2f°C/h < %.2f°C/h), ignoring it",
-                target_hour,
-                avg_lhs,
-                MINIMUM_REALISTIC_LHS,
-            )
-            return None
-
         _LOGGER.info(
             "Calculated contextual LHS for hour %d: %.2f°C/h from %d cycles",
             target_hour,
@@ -158,12 +150,11 @@ class ContextualLHSCalculatorService:
         rejected: set[int] = set()
         for hour, hour_cycles in self.group_cycles_by_hour(cycles).items():
             avg_lhs = self._average_heating_slope(hour_cycles, hour)
-            if avg_lhs is None:
-                continue
-            if avg_lhs < MINIMUM_REALISTIC_LHS:
-                rejected.add(hour)
-            else:
+            if avg_lhs is not None:
                 learned[hour] = avg_lhs
+            elif any(cycle.avg_heating_slope > 0 for cycle in hour_cycles):
+                # The hour heated, but only unrealistically slowly
+                rejected.add(hour)
 
         _LOGGER.info(
             "Contextual LHS learned for %d hours; %d hours rejected below %.2f°C/h %s",
@@ -176,25 +167,27 @@ class ContextualLHSCalculatorService:
         return ContextualLHSByHour(learned=learned, rejected_hours=frozenset(rejected))
 
     def _average_heating_slope(self, cycles: list[HeatingCycle], hour: int) -> float | None:
-        """Average the positive heating slopes of the cycles of one hour.
+        """Average the heating slopes of the realistic cycles of one hour.
 
-        Cycles where temperature did not rise carry no useful learning data
-        about heating speed, so they are left out.
+        Cycles below MINIMUM_REALISTIC_LHS carry no useful learning data about
+        heating speed, so they are left out with the same rule as the global
+        LHS (#223). The average of the remaining cycles is therefore realistic.
 
         Args:
             cycles: Cycles already filtered to the hour
             hour: Hour (0-23), for logging
 
         Returns:
-            Average slope in °C/hour, or None if no cycle has a positive slope.
+            Average slope in °C/hour, or None if no cycle of the hour is realistic.
         """
-        if not cycles:
-            _LOGGER.debug("No cycles found for hour %d", hour)
-            return None
-
-        lhs_values = [c.avg_heating_slope for c in cycles if c.avg_heating_slope > 0]
+        lhs_values = [c.avg_heating_slope for c in filter_realistic_cycles(cycles)]
         if not lhs_values:
-            _LOGGER.debug("No cycles with positive heating slope for hour %d", hour)
+            _LOGGER.debug(
+                "No realistic cycle (>= %.2f°C/h) for hour %d among %d cycles",
+                MINIMUM_REALISTIC_LHS,
+                hour,
+                len(cycles),
+            )
             return None
 
         return sum(lhs_values) / len(lhs_values)
