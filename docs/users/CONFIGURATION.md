@@ -19,6 +19,8 @@ A configuration dialog will appear. Here's what you need:
 | **VTherm Entity** | ✅ Yes | Your Versatile Thermostat climate entity | Go to **Devices** → Find your thermostat → Copy entity name (e.g., `climate.living_room`) |
 | **Scheduler Entity** | ⚠️ Optional | HACS Scheduler switch(es) that control the VTherm | Go to **Devices** → Find your scheduler → Copy entity name (e.g., `switch.schedule_heating`) |
 
+> **Native Home Assistant schedules**: a `schedule.*` helper can be selected instead of a HACS Scheduler switch. It only tells IHP when the next ON block starts, so IHP preheats to the VTherm **comfort** preset temperature for that block (20 °C if the comfort preset is not set).
+
 > **New in v0.5.0+**: The Scheduler Entity is now **optional**. See [Using IHP Without a Scheduler](#using-ihp-without-a-scheduler) below.
 
 ### Step 3: (Optional) Add Environmental Sensors
