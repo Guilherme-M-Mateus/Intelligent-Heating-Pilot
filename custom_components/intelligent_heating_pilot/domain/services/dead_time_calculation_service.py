@@ -56,7 +56,7 @@ class DeadTimeCalculationService:
         )
         avg_dead_time = total_dead_time / len(cycles_with_dead_time)
 
-        _LOGGER.info(
+        _LOGGER.debug(
             "Calculated average dead_time from %d cycles: %.1f minutes",
             len(cycles_with_dead_time),
             avg_dead_time,
