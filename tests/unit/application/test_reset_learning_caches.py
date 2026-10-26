@@ -173,13 +173,11 @@ class TestHeatingApplicationResetLearning:
 
     @pytest.mark.asyncio
     async def test_sensor_caches_are_reset(self, app_with_stale_caches: HeatingApplication) -> None:
-        """Sensors read the default LHS everywhere, including hours that had a contextual value."""
+        """Global LHS goes back to default and previously learned hours become unknown."""
         await app_with_stale_caches.async_reset_learning()
 
         assert app_with_stale_caches.get_learned_heating_slope() == DEFAULT_LEARNED_SLOPE
-        assert app_with_stale_caches.get_contextual_learned_heating_slope(6) == (
-            DEFAULT_LEARNED_SLOPE
-        )
+        assert app_with_stale_caches.get_contextual_learned_heating_slope(6) is None
         assert app_with_stale_caches._last_known_dead_time is None
 
     @pytest.mark.asyncio

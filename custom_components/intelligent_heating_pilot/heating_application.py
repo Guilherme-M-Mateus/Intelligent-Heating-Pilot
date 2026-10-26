@@ -677,34 +677,20 @@ class HeatingApplication:
         return self._lhs_cache
 
     def get_contextual_learned_heating_slope(self, hour: int) -> float | None:
-        """Get contextual LHS for a specific hour (from cache).
+        """Get the learned contextual LHS for a specific hour (from cache).
 
-        This returns the contextual LHS from the synchronously-accessible cache.
-        Falls back to global LHS if no contextual data is available for the hour.
+        Only values actually learned for the hour are returned. There is
+        deliberately no fallback to the global LHS: the contextual sensor must
+        show unknown rather than present the global slope as hour-specific
+        (#226). Anticipation does its own fallback via LhsLifecycleManager.
 
         Args:
             hour: Hour of day (0-23)
 
         Returns:
-            Contextual LHS for the hour, or global LHS as fallback
+            Learned contextual LHS for the hour, or None if none was learned
         """
-        if hour < 0 or hour > 23:
-            return self.get_learned_heating_slope()
-
-        try:
-            # Check contextual LHS cache first
-            if hour in self._contextual_lhs_cache:
-                contextual_value = self._contextual_lhs_cache[hour]
-                # Return None only if truly no data (None in cache means no contextual data for this hour)
-                if contextual_value is None:
-                    return self.get_learned_heating_slope()  # Fallback to global
-                return contextual_value
-
-            # Not in cache, fallback to global LHS
-            return self.get_learned_heating_slope()
-        except Exception:  # noqa: BLE001
-            _LOGGER.debug("Failed to get LHS for hour %d", hour, exc_info=True)
-            return self.get_learned_heating_slope()
+        return self._contextual_lhs_cache.get(hour)
 
     def is_ihp_enabled(self) -> bool:
         """Get IHP enabled state."""
