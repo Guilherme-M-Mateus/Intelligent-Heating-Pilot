@@ -139,6 +139,12 @@ def earlier_learned_slope(slot_context: dict, slope: float, slot: str) -> None:
     asyncio.run(slot_context["storage"].set_cached_contextual_lhs(hour, slope, CYCLE_DAY))
 
 
+@given("the global slope is learned from these cycles")
+def learn_global_slope(slot_context: dict) -> None:
+    """GIVEN: The write path persists the global slope from the cycles."""
+    asyncio.run(slot_context["manager"].update_global_lhs_from_cycles(slot_context["cycles"]))
+
+
 @given("contextual slopes are learned from these cycles")
 def learn_contextual_slopes(slot_context: dict) -> None:
     """GIVEN: The write path persists contextual slopes from the cycles."""
