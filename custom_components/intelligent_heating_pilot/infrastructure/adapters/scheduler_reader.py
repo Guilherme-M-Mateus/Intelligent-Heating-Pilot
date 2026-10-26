@@ -511,9 +511,14 @@ class HASchedulerReader(ISchedulerReader):
             value = get_vtherm_attribute(state, k)
             if value is not None:
                 try:
-                    return float(value)
+                    temp_value = float(value)
                 except (ValueError, TypeError):
                     _LOGGER.debug("Invalid preset attribute %s=%s", k, value)
+                    continue
+                # Ignore 0 values as they indicate uninitialized presets
+                if temp_value > 0:
+                    return temp_value
+                _LOGGER.debug("Skipping preset attribute %s with 0°C (likely uninitialized)", k)
 
         # Fallback: if this preset is currently active, use current target temperature
         current_preset = get_vtherm_attribute(state, "preset_mode")

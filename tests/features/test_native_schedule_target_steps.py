@@ -12,9 +12,8 @@ from datetime import datetime, timedelta
 from unittest.mock import AsyncMock, Mock
 
 import pytest
-from pytest_bdd import given, parsers, scenarios, then, when
-
 from homeassistant.util import dt as dt_util
+from pytest_bdd import given, parsers, scenarios, then, when
 
 from custom_components.intelligent_heating_pilot.application.use_cases.control_preheating_use_case import (
     ControlPreheatingUseCase,
