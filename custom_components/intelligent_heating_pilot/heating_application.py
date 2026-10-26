@@ -327,17 +327,19 @@ class HeatingApplication:
             return
 
         try:
-            # Load contextual LHS for all 24 hours
+            # Rebuilt from scratch so hours no longer learned drop out of the cache
+            contextual_cache: dict[int, float] = {}
             for hour in range(24):
                 # Only learned values: a global fallback must not show up as contextual
                 contextual_lhs = await self._lhs_manager.get_learned_contextual_lhs(hour)
                 if contextual_lhs is not None:
-                    self._contextual_lhs_cache[hour] = contextual_lhs
+                    contextual_cache[hour] = contextual_lhs
                     _LOGGER.debug(
                         "Loaded contextual LHS from storage: hour %d = %.2f °C/h",
                         hour,
                         contextual_lhs,
                     )
+            self._contextual_lhs_cache = contextual_cache
         except Exception as exc:  # noqa: BLE001
             _LOGGER.warning("Failed to load contextual LHS cache: %s", exc, exc_info=True)
 
@@ -603,9 +605,21 @@ class HeatingApplication:
             self._event_bridge.request_forced_publish()
 
     def _on_extraction_complete(self) -> None:
-        """Trigger sensor recalculation after background extraction completes."""
+        """Refresh sensors once a background extraction has updated the learned data.
+
+        The extraction recalculates the global and contextual LHS in storage, but
+        the sensors read the caches held here; without reloading them the sensors
+        kept showing the old values (2.0 after a reset) until Home Assistant restarted.
+        """
+        self.hass.async_create_task(self._refresh_after_extraction())
+
+    async def _refresh_after_extraction(self) -> None:
+        """Reload the LHS caches, then recalculate and publish so sensors read them."""
+        await self.refresh_caches()
+        # Forced: an unchanged anticipation would otherwise be dropped as a duplicate
+        # and the LHS sensors, which only refresh on that event, would stay stale.
         if self._event_bridge is not None:
-            self._event_bridge._request_recalculate()
+            self._event_bridge.request_forced_publish()
 
     def _fire_dead_time_updated_event(self, learned_dead_time: float | None) -> None:
         """Publish an event when learned dead time is persisted (None after a reset)."""
@@ -623,10 +637,10 @@ class HeatingApplication:
         )
 
     async def refresh_caches(self) -> None:
-        """Refresh cached LHS value used by sensors.
+        """Refresh the global and contextual LHS caches used by sensors.
 
-        Called by sensors after an anticipation event to keep LHS in sync
-        when the event publication bypasses the coordinator's async_update path.
+        Called whenever learned data changes outside the coordinator's
+        async_update path (cycle extraction, learning reset, LHS update).
         """
         if self._lhs_manager is None:
             return
@@ -635,6 +649,7 @@ class HeatingApplication:
             self._lhs_cache = await self._lhs_manager.get_global_lhs()
         except Exception:  # noqa: BLE001
             _LOGGER.debug("Failed to refresh LHS cache", exc_info=True)
+        await self._load_contextual_lhs_cache()
 
     # Sensor accessors (synchronous for sensor entities)
 
