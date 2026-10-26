@@ -101,9 +101,11 @@ class ContextualLHSCalculatorService:
             target_hour: Hour (0-23) to filter by
 
         Returns:
-            Average LHS value, or None if no data for this hour or if the
-            average is below MINIMUM_REALISTIC_LHS. An unrealistic hour must
-            fall back to the global LHS, so it is never reported as learned.
+            Average LHS of the hour's cycles that reach MINIMUM_REALISTIC_LHS,
+            or None if no data for this hour or if none of its cycles reaches
+            that threshold. Slower cycles are left out individually; an hour
+            with no realistic cycle must fall back to the global LHS, so it is
+            never reported as learned.
 
         Raises:
             ValueError: If target_hour not in 0-23
