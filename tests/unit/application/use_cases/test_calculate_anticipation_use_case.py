@@ -150,6 +150,35 @@ class TestCalculateAnticipationUseCase:
         mock_prediction_service.predict_heating_time.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_exclude_entity_ids_forwarded_to_scheduler_reader(
+        self,
+        use_case: CalculateAnticipationUseCase,
+        mock_scheduler_reader: Mock,
+    ) -> None:
+        """exclude_entity_ids is forwarded to get_next_timeslot() unchanged (#64)."""
+        mock_scheduler_reader.get_next_timeslot.return_value = None
+        excluded = frozenset({"switch.non_vacation"})
+
+        await use_case.calculate_anticipation_datas(exclude_entity_ids=excluded)
+
+        mock_scheduler_reader.get_next_timeslot.assert_called_once_with(exclude_entity_ids=excluded)
+
+    @pytest.mark.asyncio
+    async def test_default_exclude_entity_ids_matches_today_behavior(
+        self,
+        use_case: CalculateAnticipationUseCase,
+        mock_scheduler_reader: Mock,
+    ) -> None:
+        """Omitting exclude_entity_ids calls get_next_timeslot() with an empty set."""
+        mock_scheduler_reader.get_next_timeslot.return_value = None
+
+        await use_case.calculate_anticipation_datas()
+
+        mock_scheduler_reader.get_next_timeslot.assert_called_once_with(
+            exclude_entity_ids=frozenset()
+        )
+
+    @pytest.mark.asyncio
     async def test_no_scheduler_reader_returns_empty_data(
         self,
         mock_environment_reader: Mock,

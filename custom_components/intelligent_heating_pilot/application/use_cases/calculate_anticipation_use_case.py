@@ -86,12 +86,16 @@ class CalculateAnticipationUseCase:
         self,
         target_time: datetime | None = None,
         target_temp: float | None = None,
+        exclude_entity_ids: frozenset[str] = frozenset(),
     ) -> dict:
         """Calculate anticipation data without scheduling preheating.
 
         Args:
             target_time: Target time for heating. If None, uses next scheduled timeslot.
             target_temp: Target temperature. If None, uses value from timeslot.
+            exclude_entity_ids: Scheduler entity ids to exclude from candidate
+                selection this call — forwarded to
+                ``ISchedulerReader.get_next_timeslot()``. Empty by default.
 
         Returns:
             Dict with anticipation data. Returns structure with None values for fields
@@ -138,7 +142,9 @@ class CalculateAnticipationUseCase:
                     learned_heating_slope=global_lhs,
                 )
 
-            timeslot = await self._scheduler_reader.get_next_timeslot()
+            timeslot = await self._scheduler_reader.get_next_timeslot(
+                exclude_entity_ids=exclude_entity_ids
+            )
             if not timeslot:
                 _LOGGER.debug("No scheduled timeslot found")
                 # Return minimal data structure

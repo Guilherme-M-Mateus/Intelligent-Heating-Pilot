@@ -56,3 +56,15 @@ class IClimateDataReader(ABC):
             ``True`` when the VTherm is actively heating, ``False`` otherwise
             (including when the entity is unavailable).
         """
+
+    @abstractmethod
+    def get_target_temperature(self) -> float | None:
+        """Retrieve the VTherm's current target temperature.
+
+        Reads the live state of the underlying climate entity; implementations
+        must not cache a previously observed value.
+
+        Returns:
+            Current target temperature in Celsius, or ``None`` when the VTherm
+            entity is unavailable or its target temperature cannot be read.
+        """

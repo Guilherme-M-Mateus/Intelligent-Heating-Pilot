@@ -246,6 +246,7 @@ class HeatingApplication:
 
         control_preheating = ControlPreheatingUseCase(
             scheduler_commander=self._scheduler_commander,
+            climate_data_reader=self._climate_data_reader,
         )
 
         schedule_anticipation_action = ScheduleAnticipationActionUseCase(
@@ -269,6 +270,15 @@ class HeatingApplication:
             control_preheating=control_preheating,
             schedule_anticipation_action=schedule_anticipation_action,
             update_cache=update_cache,
+        )
+        # Wire the timer-fired blocked-scheduler retry path (breaks the
+        # construction-order circular dependency: the orchestrator needs
+        # schedule_anticipation_action to exist first). Routed through
+        # _learning_lock so this re-entry cannot interleave with the periodic
+        # recalculation in _async_update_locked(), which mutates the same
+        # use-case state.
+        schedule_anticipation_action.set_on_scheduler_blocked(
+            self._retry_anticipation_after_blocked_scheduler_locked
         )
         _LOGGER.debug("Orchestrator created successfully")
 
@@ -493,6 +503,24 @@ class HeatingApplication:
         async with self._learning_lock:
             await self._async_update_locked()
 
+    async def _retry_anticipation_after_blocked_scheduler_locked(
+        self, blocked_entity_id: str
+    ) -> None:
+        """Re-enter the anticipation cycle after a timer-fired block, under the lock.
+
+        Wired as ScheduleAnticipationActionUseCase's ``on_scheduler_blocked``
+        callback. Holds ``_learning_lock`` so this re-entry cannot interleave
+        with ``_async_update_locked()``'s periodic recalculation, which
+        mutates the same use-case state (#64).
+
+        Args:
+            blocked_entity_id: Scheduler entity id confirmed blocked.
+        """
+        if not self._orchestrator:
+            return
+        async with self._learning_lock:
+            await self._orchestrator.retry_anticipation_after_blocked_scheduler(blocked_entity_id)
+
     async def _async_update_locked(self) -> None:
         """Run async_update while holding the learning lock."""
         if not self._orchestrator:
@@ -559,6 +587,8 @@ class HeatingApplication:
                 "scheduler_entity": anticipation_data.get("scheduler_entity", ""),
                 "humidity": anticipation_data.get("humidity"),
                 "cloud_coverage": anticipation_data.get("cloud_coverage"),
+                "scheduler_blocked": anticipation_data.get("scheduler_blocked", False),
+                "blocked_schedulers": anticipation_data.get("blocked_schedulers", []),
             }
             self.hass.bus.async_fire(
                 f"{DOMAIN}_anticipation_calculated",

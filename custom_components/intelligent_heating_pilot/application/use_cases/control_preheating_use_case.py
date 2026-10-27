@@ -8,10 +8,12 @@ from __future__ import annotations
 import logging
 from typing import TYPE_CHECKING
 
+from ...domain.constants import TARGET_TEMP_MATCH_TOLERANCE_C
+
 if TYPE_CHECKING:
     from datetime import datetime
 
-    from ...domain.interfaces import ISchedulerCommander
+    from ...domain.interfaces import IClimateDataReader, ISchedulerCommander
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,14 +30,20 @@ class ControlPreheatingUseCase:
     def __init__(
         self,
         scheduler_commander: ISchedulerCommander,
+        climate_data_reader: IClimateDataReader | None = None,
     ) -> None:
         """Initialize the use case.
 
         Args:
             scheduler_commander: Commands scheduler actions
+            climate_data_reader: Reads the VTherm's resulting target temperature
+                to verify a triggered action's effect. Optional: when omitted,
+                verification is skipped and every trigger is treated as
+                successful (today's behavior, unchanged).
         """
         _LOGGER.debug("Initializing ControlPreheatingUseCase")
         self._scheduler_commander = scheduler_commander
+        self._climate_data_reader = climate_data_reader
         self._is_preheating_active = False
         self._preheating_target_time: datetime | None = None
         self._active_scheduler_entity: str | None = None
@@ -92,13 +100,20 @@ class ControlPreheatingUseCase:
         target_time: datetime,
         target_temp: float,
         scheduler_entity_id: str,
-    ) -> None:
-        """Start preheating by triggering scheduler action.
+    ) -> bool:
+        """Start preheating by triggering scheduler action and verifying its effect.
 
         Args:
             target_time: Target schedule time
             target_temp: Target temperature
             scheduler_entity_id: Scheduler entity to trigger
+
+        Returns:
+            True when preheating may proceed normally: the action's effect was
+            confirmed, the scheduler is a native schedule (nothing to verify),
+            or the VTherm's state could not be read (unproven failure, treated
+            as success). False only when a mismatch was positively confirmed —
+            the caller should attempt the next candidate scheduler instead.
         """
         _LOGGER.debug(
             "Entering ControlPreheatingUseCase.start_preheating(target_time=%s, temp=%.1f, scheduler=%s)",
@@ -113,14 +128,46 @@ class ControlPreheatingUseCase:
         )
 
         # Use scheduler's run_action to trigger the action
-        await self._scheduler_commander.run_action(target_time, scheduler_entity_id)
+        attempted = await self._scheduler_commander.run_action(target_time, scheduler_entity_id)
 
-        # Mark pre-heating as active
-        self._is_preheating_active = True
-        self._preheating_target_time = target_time
-        self._active_scheduler_entity = scheduler_entity_id
+        confirmed = self._verify_action_effect(attempted, target_temp)
 
-        _LOGGER.debug("Exiting ControlPreheatingUseCase.start_preheating()")
+        if confirmed:
+            self._is_preheating_active = True
+            self._preheating_target_time = target_time
+            self._active_scheduler_entity = scheduler_entity_id
+        else:
+            _LOGGER.warning(
+                "Scheduler action for %s had no effect (conditions likely unmet) - "
+                "not marking preheating active",
+                scheduler_entity_id,
+            )
+
+        _LOGGER.debug("Exiting ControlPreheatingUseCase.start_preheating() -> %s", confirmed)
+        return confirmed
+
+    def _verify_action_effect(self, attempted: bool, target_temp: float) -> bool:
+        """Verify whether a triggered action actually applied ``target_temp``.
+
+        Args:
+            attempted: Whether an actuation attempt was made (False for a
+                native schedule, which is never actuated).
+            target_temp: The temperature the action was expected to apply.
+
+        Returns:
+            True when there is nothing to disprove (no attempt, no reader
+            configured, or the VTherm state is unreadable) or the resulting
+            target temperature matches within tolerance. False only on a
+            positively confirmed mismatch.
+        """
+        if not attempted or self._climate_data_reader is None:
+            return True
+
+        resulting_temp = self._climate_data_reader.get_target_temperature()
+        if resulting_temp is None:
+            return True
+
+        return abs(resulting_temp - target_temp) <= TARGET_TEMP_MATCH_TOLERANCE_C
 
     def is_preheating_active(self) -> bool:
         """Check if preheating is currently active.

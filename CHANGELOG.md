@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 > **After upgrading, call the `reset_learning` service once per device.** Data learned by earlier versions is skewed and would keep distorting preheating. Learning restarts right away from the Home Assistant recorder history.
 
 ### Fixed
+- **Anticipation now falls back when a scheduler is blocked** (#64) – When several scheduler entities are configured (e.g. a vacation and a non-vacation calendar) and the earliest one's own conditions are not met, IHP now retries with the next applicable scheduler within the same cycle, instead of leaving the room cold until the blocked slot's time has elapsed. When every configured scheduler is blocked, this is now visible on the anticipation sensor's attributes, not only in the logs.
 - **More accurate preheating** (#179, #183, #184, #185, #223) – Heating cycles are dated and measured correctly, each scheduled slot uses the slope learned for its own hour, and cycles that barely heated (safety mode, load shedding) are ignored. Preheating no longer starts hours too early or too late.
 - **Learning changes apply without a restart** (#181) – `reset_learning` relearns from history immediately, and sensors show new values as soon as they are learned.
 - **No more comfort/eco flapping before a slot** (#182) – A started preheat is kept until its slot, unless the slot is removed or moved.

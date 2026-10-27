@@ -738,6 +738,34 @@ class TestFullDataPublishing:
         assert event_data["next_schedule_time"] == full_data["next_schedule_time"].isoformat()
         assert event_data["next_target_temperature"] == 21.0
         assert "clear_values" not in event_data
+        # Issue #64: the fallback-tracking keys are always present, defaulting to
+        # "nothing blocked" when the orchestrator did not report a block.
+        assert event_data["scheduler_blocked"] is False
+        assert event_data["blocked_schedulers"] == []
+
+    @pytest.mark.asyncio
+    @patch("homeassistant.core.EventBus.async_fire")
+    async def test_publishes_scheduler_blocked_fields_when_reported(
+        self,
+        mock_async_fire: Mock,
+        hass: HomeAssistant,
+        event_bridge: HAEventBridge,
+        mock_orchestrator: Mock,
+    ) -> None:
+        """Issue #64: a fully-exhausted cycle's scheduler_blocked/blocked_schedulers
+        reach the event payload, not just a successfully-resolved one."""
+        partial = _partial_anticipation_data()
+        partial["scheduler_blocked"] = True
+        partial["blocked_schedulers"] = ["switch.a", "switch.b"]
+        mock_orchestrator.calculate_and_schedule_anticipation.return_value = partial
+        event_bridge.setup_listeners()
+
+        hass.states.async_set("switch.bedroom_schedule", "on")
+        await hass.async_block_till_done()
+
+        event_data = mock_async_fire.call_args[0][1]
+        assert event_data["scheduler_blocked"] is True
+        assert event_data["blocked_schedulers"] == ["switch.a", "switch.b"]
 
     @pytest.mark.asyncio
     @patch("homeassistant.core.EventBus.async_fire")
